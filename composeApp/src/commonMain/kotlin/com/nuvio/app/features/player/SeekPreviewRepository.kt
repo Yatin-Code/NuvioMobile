@@ -40,10 +40,14 @@ object SeekPreviewRepository {
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {
-            seekPreviewLog("loadTrack fetch failed url=$url err=${e.message}")
+            val msg = "loadTrack fetch failed url=$url err=${e.message}"
+            SeekPreviewDebugLogs.noteFetch(msg)
+            seekPreviewLog(msg)
             null
         }
-        seekPreviewLog("loadTrack result url=$url track=${track != null} cues=${track?.cues?.size}")
+        val doneMsg = "loadTrack result url=$url track=${track != null} cues=${track?.cues?.size}"
+        SeekPreviewDebugLogs.noteFetch(doneMsg)
+        seekPreviewLog(doneMsg)
         synchronized(lock) {
             if (trackCache.size >= MAX_CACHED_TRACKS) trackCache.clear()
             trackCache[url] = track

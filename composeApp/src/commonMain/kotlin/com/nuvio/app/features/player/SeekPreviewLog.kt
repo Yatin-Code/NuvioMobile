@@ -18,9 +18,11 @@ internal expect fun seekPreviewLogPlatform(message: String)
 
 /** Last-200 in-memory seek-preview log lines for the on-screen viewer. */
 object SeekPreviewDebugLogs {
-    private const val MAX_LINES = 200
+    private const val MAX_LINES = 500
     private val lock = Any()
     private val lines = ArrayDeque<String>()
+    /** Latest fetch outcome; pinned so per-frame logs can never evict it. */
+    private var lastFetch: String = "(no fetch yet)"
 
     fun add(line: String) {
         synchronized(lock) {
@@ -29,7 +31,16 @@ object SeekPreviewDebugLogs {
         }
     }
 
+    fun noteFetch(line: String) {
+        synchronized(lock) { lastFetch = line }
+        add(line)
+    }
+
     fun snapshot(): List<String> = synchronized(lock) { lines.toList() }
 
-    fun clear() = synchronized(lock) { lines.clear() }
+    fun snapshotForCopy(): String = synchronized(lock) {
+        (listOf("FETCH: $lastFetch") + lines).joinToString("\n")
+    }
+
+    fun clear() = synchronized(lock) { lines.clear(); lastFetch = "(no fetch yet)" }
 }

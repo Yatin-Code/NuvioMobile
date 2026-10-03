@@ -2712,7 +2712,8 @@ private fun SeekPreviewDebugLogRows(isTablet: Boolean) {
         isTablet = isTablet,
         enabled = lines.isNotEmpty(),
         onClick = {
-            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(lines.joinToString("\n")))
+            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(
+                com.nuvio.app.features.player.SeekPreviewDebugLogs.snapshotForCopy()))
             justCopied = true
         },
     )

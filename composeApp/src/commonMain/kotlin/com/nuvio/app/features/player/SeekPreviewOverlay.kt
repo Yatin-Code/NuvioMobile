@@ -70,7 +70,11 @@ internal fun SeekPreviewScrubOverlay(
         seekPreviewLog("overlay skip badDuration query=$query")
         return
     }
-    seekPreviewLog("overlay query=$query dur=$durationMs scrubbing=${params.isScrubbing}")
+    var lastScrubLogged by remember(query) { mutableStateOf<Boolean?>(null) }
+    if (lastScrubLogged != params.isScrubbing) {
+        lastScrubLogged = params.isScrubbing
+        seekPreviewLog("overlay query=$query dur=$durationMs scrubbing=${params.isScrubbing}")
+    }
 
     var track by remember(query) { mutableStateOf<SeekPreviewTrack?>(null) }
     LaunchedEffect(query) {
