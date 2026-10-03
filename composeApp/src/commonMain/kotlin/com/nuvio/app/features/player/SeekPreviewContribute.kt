@@ -7,6 +7,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 import kotlin.math.abs
+import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -321,7 +322,7 @@ private suspend fun PlayerScreenRuntime.runSeekPreviewContribute() {
             "flushedThrough=${contribution.flushedThroughMs} dur=$durationMs",
     )
 
-    var backoffStartedAt: TimeSource.Monotonic.TimeMark? = null
+    var backoffStartedAt: TimeMark? = null
     var loggedGate = false
 
     while (!playbackSnapshot.isEnded && errorMessage == null && !contribution.done) {
