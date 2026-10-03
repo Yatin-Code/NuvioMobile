@@ -50,6 +50,13 @@ private const val SeekPreviewLingerMs = 1500L
  *
  * Driven by the live scrub position ([SeekPreviewParams.positionMs], fed from
  * onScrubChange); the seek commit still fires only on onScrubFinished.
+ *
+ * Also silent past the served coverage: a partial registry version answers
+ * with a `covered_until_ms` and the lookup honors it, so the uncovered tail of
+ * a title stays blank instead of showing the last tile over and over. When
+ * this device contributed that range itself, the contributor publishes the
+ * refreshed version on [SeekPreviewTrackBus] and the card starts answering
+ * without a restart.
  */
 @Composable
 internal fun SeekPreviewScrubOverlay(
@@ -75,12 +82,34 @@ internal fun SeekPreviewScrubOverlay(
         lastScrubLogged = params.isScrubbing
         seekPreviewLog("overlay query=$query dur=$durationMs scrubbing=${params.isScrubbing}")
     }
+    // No-cue is a per-scrub-frame log; keep it to once per scrub gesture so the
+    // debug ring buffer stays readable.
+    var noCueLogged by remember(query) { mutableStateOf(false) }
+    if (!params.isScrubbing) noCueLogged = false
 
     var track by remember(query) { mutableStateOf<SeekPreviewTrack?>(null) }
+    // Contributor-published refreshes land on the bus minutes into playback;
+    // the generation counter is what wakes this overlay up for them.
+    val publishedGeneration = SeekPreviewTrackBus.snapshot.generation
     LaunchedEffect(query) {
         SeekPreviewSheetTiles.clear()
-        track = SeekPreviewRepository.loadTrack(query)
-        seekPreviewLog("overlay track loaded null=${track == null} cues=${track?.cues?.size}")
+        val fetched = SeekPreviewRepository.loadTrack(query)
+        track = fetched ?: SeekPreviewTrackBus.trackFor(query.registryUrl)
+        seekPreviewLog(
+            "overlay track loaded null=${fetched == null} cues=${track?.cues?.size} " +
+                "status=${track?.status} covered=${track?.coveredUntilMs}",
+        )
+    }
+    LaunchedEffect(query, publishedGeneration) {
+        val published = SeekPreviewTrackBus.trackFor(query.registryUrl) ?: return@LaunchedEffect
+        if (published == track) return@LaunchedEffect
+        track = published
+        // Newly merged cue ranges mean sheets this overlay never fetched.
+        SeekPreviewSheetTiles.clear()
+        seekPreviewLog(
+            "overlay track refreshed cues=${published.cues.size} " +
+                "status=${published.status} covered=${published.coveredUntilMs}",
+        )
     }
 
     // Linger: keep the card visible briefly after scrub ends.
@@ -95,9 +124,16 @@ internal fun SeekPreviewScrubOverlay(
     }
 
     val positionMs = params.positionMs.coerceIn(0L, durationMs)
+    // Floor lookup, bounded by the served coverage: a partial ("pending")
+    // version must stay silent past its last cue instead of repeating a stale
+    // tail tile (thumbnailFor compares covered_until_ms in source time).
     val cue = track?.thumbnailFor(positionMs)
-    if (track != null && cue == null) {
-        seekPreviewLog("overlay no cue for pos=$positionMs cues=${track?.cues?.size}")
+    if (track != null && cue == null && !noCueLogged) {
+        noCueLogged = true
+        seekPreviewLog(
+            "overlay no cue for pos=$positionMs cues=${track?.cues?.size} " +
+                "covered=${track?.coveredUntilMs} status=${track?.status}",
+        )
     }
     val tile by produceState<ImageBitmap?>(null, cue) {
         value = if (cue == null) {

@@ -5,11 +5,13 @@ package com.nuvio.app.features.player
  *
  * Served by OUR registry (seekr-wire-compatible), NOT generated on-device:
  *   GET {base}/v1/sprites?tmdb_id|imdb_id|show_tmdb_id|show_imdb_id[+season+episode]&duration_ms
- *     -> {vtt_url (absolute), version, source_duration_ms, scale, ids...}
+ *     -> {vtt_url (absolute), version, source_duration_ms, scale,
+ *         status (pending|complete), covered_until_ms, ids...}
  *     unknown title -> 404 {"error":...} (callers treat as silent miss)
  *
  * VTT cues map time ranges to absolute sheet URLs + `#xywh=x,y,w,h`
- * (same wire format as seekr VTT / spritegen output).
+ * (same wire format as seekr VTT / spritegen output). A `pending` version is
+ * a partial stripe: servable up to `covered_until_ms`, silent after it.
  */
 
 /** Registry base. Hardcoded for testing only — single const, see [SEEK_PREVIEW_REGISTRY_BASE]. */
@@ -24,25 +26,113 @@ data class SeekPreviewCue(
     val h: Int,
 )
 
+/** Registry version states (`status` on /v1/sprites and /v1/titles). */
+const val SEEK_PREVIEW_VERSION_PENDING = "pending"
+const val SEEK_PREVIEW_VERSION_COMPLETE = "complete"
+
+/**
+ * Served version of a title. Coverage-aware since the registry started
+ * keeping partial (`pending`) versions: those are servable, but only up to
+ * [coveredUntilMs], so a partial sheet must never hand out a stale tail tile
+ * past its last cue.
+ */
 data class SeekPreviewTrack(
     val vttUrl: String,
     val sourceDurationMs: Long,
     val scale: Double = 1.0,
     val cues: List<SeekPreviewCue> = emptyList(),
-)
+    /** `pending` (partial, servable up to coveredUntilMs) or `complete`. */
+    val status: String = SEEK_PREVIEW_VERSION_COMPLETE,
+    /**
+     * Source-time end of the served coverage (registry `covered_until_ms`).
+     * Null when the registry did not say (older server) -> treat as unbounded,
+     * which keeps the pre-coverage behavior.
+     */
+    val coveredUntilMs: Long? = null,
+) {
+    /**
+     * Nothing left for a contributor to stripe. Coverage decides (both are
+     * source time), with `status` as the fallback for a registry that reports
+     * coverage at all — a pre-coverage registry sends neither field, which
+     * reads as complete.
+     */
+    val coversWholeSource: Boolean
+        get() {
+            val covered = coveredUntilMs
+                ?: return status != SEEK_PREVIEW_VERSION_PENDING
+            return covered >= sourceDurationMs
+        }
+
+    /**
+     * [coveredUntilMs] on the local playback timeline. `scale` is local
+     * duration / registry source duration and [thumbnailFor] maps local ->
+     * source with a division, so mapping source -> local multiplies. Null when
+     * the registry reported no coverage at all.
+     */
+    fun coveredUntilOnLocalTimeline(): Long? {
+        val covered = coveredUntilMs ?: return null
+        return if (scale > 0.0) (covered * scale).toLong() else covered
+    }
+}
 
 /**
  * Floor semantics (port of sdk/kotlin Peek.kt `thumbnailFor`):
  * last cue at or before [positionMs], corrected by the registry scale
  * (scale = playing duration / source duration). Null = no preview, hide thumb.
+ *
+ * [coveredUntilMs] defaults to the track's own coverage end and is compared in
+ * source time (after the scale correction), so a partial `pending` version
+ * stays silent past its last cue instead of showing a stale tail tile. Pass
+ * null to lift the bound.
  */
-fun SeekPreviewTrack.thumbnailFor(positionMs: Long): SeekPreviewCue? {
+fun SeekPreviewTrack.thumbnailFor(
+    positionMs: Long,
+    coveredUntilMs: Long? = this.coveredUntilMs,
+): SeekPreviewCue? {
     val pos = if (scale > 0.0) (positionMs / scale).toLong() else positionMs
+    if (coveredUntilMs != null && pos > coveredUntilMs) return null
     var hit: SeekPreviewCue? = null
     for (c in cues) {
         if (c.startMs <= pos) hit = c else break
     }
     return hit
+}
+
+/**
+ * Where a contributor should start striping this title: the served coverage
+ * end brought back to the local timeline and floored to a grid slot. 0 when
+ * the registry has no version (or no coverage data), so a full miss still
+ * plans from the head of the title exactly like before.
+ */
+fun SeekPreviewTrack.coverageAnchorMs(
+    durationMs: Long,
+    intervalMs: Long = SEEK_PREVIEW_CAPTURE_INTERVAL_MS,
+): Long {
+    val covered = coveredUntilOnLocalTimeline() ?: return 0L
+    val ceiling = if (durationMs > 0L) durationMs else covered
+    return slotStartFor(covered.coerceIn(0L, ceiling), intervalMs)
+}
+
+/**
+ * Grid slots the served version already covers: cue starts mapped onto the
+ * local timeline (source time scaled by [SeekPreviewTrack.scale]) and floored
+ * to a slot. A contributor skips these, so two devices rarely upload the same
+ * slot and a near-duplicate version (drifted duration) does not re-stripe the
+ * head it already holds.
+ */
+fun SeekPreviewTrack.coveredSlotTimestamps(
+    durationMs: Long,
+    intervalMs: Long = SEEK_PREVIEW_CAPTURE_INTERVAL_MS,
+): Set<Long> {
+    val safeInterval = intervalMs.takeIf { it > 0L } ?: SEEK_PREVIEW_CAPTURE_INTERVAL_MS
+    val out = HashSet<Long>()
+    for (cue in cues) {
+        val localMs = if (scale > 0.0) (cue.startMs * scale).toLong() else cue.startMs
+        if (localMs < 0L) continue
+        if (durationMs > 0L && localMs >= durationMs) continue
+        out.add(slotStartFor(localMs, safeInterval))
+    }
+    return out
 }
 
 sealed interface SeekPreviewQuery {

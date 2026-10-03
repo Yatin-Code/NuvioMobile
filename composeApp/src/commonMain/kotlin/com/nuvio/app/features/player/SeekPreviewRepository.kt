@@ -13,10 +13,12 @@ import kotlinx.serialization.json.longOrNull
  * Remote-registry seek-preview repository (commonMain).
  *
  * Flow per title: registry `/v1/sprites` manifest (JSON) -> VTT text ->
- * [SeekPreviewTrack] with floor lookup. Sheet bytes + tile cropping live in
- * the platform [SeekPreviewSheetTiles] actuals.
+ * [SeekPreviewTrack] with floor lookup + coverage bound. Sheet bytes + tile
+ * cropping live in the platform [SeekPreviewSheetTiles] actuals.
  *
  * SILENT null on 404 / any error: seeking always works, just without preview.
+ * [loadTrack] caches per URL; contributors pass `forceReload = true` to pick
+ * up their own freshly promoted (merged) version.
  */
 object SeekPreviewRepository {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
@@ -26,13 +28,15 @@ object SeekPreviewRepository {
     private val lock = Any()
     private val trackCache = HashMap<String, SeekPreviewTrack?>()
 
-    suspend fun loadTrack(query: SeekPreviewQuery): SeekPreviewTrack? {
+    suspend fun loadTrack(query: SeekPreviewQuery, forceReload: Boolean = false): SeekPreviewTrack? {
         val url = query.registryUrl
-        seekPreviewLog("loadTrack url=$url")
-        synchronized(lock) {
-            if (trackCache.containsKey(url)) {
-                seekPreviewLog("loadTrack cache hit url=$url track=${trackCache[url] != null}")
-                return trackCache[url]
+        seekPreviewLog("loadTrack url=$url forceReload=$forceReload")
+        if (!forceReload) {
+            synchronized(lock) {
+                if (trackCache.containsKey(url)) {
+                    seekPreviewLog("loadTrack cache hit url=$url track=${trackCache[url] != null}")
+                    return trackCache[url]
+                }
             }
         }
         val track = try {
@@ -45,7 +49,8 @@ object SeekPreviewRepository {
             seekPreviewLog(msg)
             null
         }
-        val doneMsg = "loadTrack result url=$url track=${track != null} cues=${track?.cues?.size}"
+        val doneMsg = "loadTrack result url=$url track=${track != null} cues=${track?.cues?.size} " +
+            "status=${track?.status} covered=${track?.coveredUntilMs}"
         SeekPreviewDebugLogs.noteFetch(doneMsg)
         seekPreviewLog(doneMsg)
         synchronized(lock) {
@@ -78,13 +83,18 @@ object SeekPreviewRepository {
             return null
         }
         val cues = parseSeekPreviewVtt(vttText, entry.vttUrl)
-        seekPreviewLog("fetchTrack vtt=${entry.vttUrl} cues=${cues.size} srcDur=${entry.sourceDurationMs} scale=${entry.scale}")
+        seekPreviewLog(
+            "fetchTrack vtt=${entry.vttUrl} cues=${cues.size} srcDur=${entry.sourceDurationMs} " +
+                "scale=${entry.scale} status=${entry.status} covered=${entry.coveredUntilMs}",
+        )
         if (cues.isEmpty()) return null
         return SeekPreviewTrack(
             vttUrl = entry.vttUrl,
             sourceDurationMs = entry.sourceDurationMs,
             scale = entry.scale,
             cues = cues,
+            status = entry.status,
+            coveredUntilMs = entry.coveredUntilMs,
         )
     }
 
@@ -92,6 +102,10 @@ object SeekPreviewRepository {
         val vttUrl: String,
         val sourceDurationMs: Long,
         val scale: Double,
+        /** `pending` (partial, servable up to coveredUntilMs) or `complete`. */
+        val status: String,
+        /** Source-time coverage end; null when the registry did not report one. */
+        val coveredUntilMs: Long?,
     )
 
     internal fun parseRegistryManifest(text: String): RegistryEntry? {
@@ -102,7 +116,21 @@ object SeekPreviewRepository {
             val sourceDurationMs = obj["source_duration_ms"]?.jsonPrimitive?.longOrNull
                 ?: return null
             val scale = obj["scale"]?.jsonPrimitive?.doubleOrNull ?: 1.0
-            RegistryEntry(vttUrl = vttUrl, sourceDurationMs = sourceDurationMs, scale = scale)
+            // Coverage fields are additive: a registry that predates them omits
+            // both, which reads as a fully covered (complete) version.
+            val status = obj["status"]?.jsonPrimitive?.contentOrNull
+                ?.trim()
+                ?.lowercase()
+                ?.takeIf { it == SEEK_PREVIEW_VERSION_PENDING }
+                ?: SEEK_PREVIEW_VERSION_COMPLETE
+            val coveredUntilMs = obj["covered_until_ms"]?.jsonPrimitive?.longOrNull
+            RegistryEntry(
+                vttUrl = vttUrl,
+                sourceDurationMs = sourceDurationMs,
+                scale = scale,
+                status = status,
+                coveredUntilMs = coveredUntilMs,
+            )
         } catch (_: Exception) {
             null
         }

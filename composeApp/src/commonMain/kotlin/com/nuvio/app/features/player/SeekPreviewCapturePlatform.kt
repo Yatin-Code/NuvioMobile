@@ -27,10 +27,29 @@ expect object SeekPreviewFrameCapture {
     /** Persists one tile JPEG; false when storage is unavailable. */
     suspend fun saveTile(titleHash: String, timestampMs: Long, jpeg: ByteArray): Boolean
 
-    /** All persisted tiles for a title (timestamp -> JPEG), empty when none. */
-    suspend fun loadTiles(titleHash: String): Map<Long, ByteArray>
+    /**
+     * Persisted tiles for a title (timestamp -> JPEG), empty when none.
+     * [timestampsMs] narrows the read to the wanted slots; an empty collection
+     * means "everything", which is fine for listing but wasteful for a bundle
+     * flush (the bucket can hold thousands of tiles).
+     */
+    suspend fun loadTiles(
+        titleHash: String,
+        timestampsMs: Collection<Long> = emptyList(),
+    ): Map<Long, ByteArray>
 
-    /** Deletes a title's whole capture bucket (after a successful upload). */
+    /**
+     * Timestamps persisted under [titleHash], ascending, without reading tile
+     * bytes. Buckets survive a successful upload (they are the backlog a later
+     * session drains), so this listing stays the cheap way to resume.
+     */
+    suspend fun listTileTimestamps(titleHash: String): List<Long>
+
+    /**
+     * Deletes a title's whole capture bucket. The contribute loop does NOT call
+     * this on success: banked tiles are the backlog a later session drains, and
+     * the platform prunes the bucket on its own. Kept for a manual reset.
+     */
     suspend fun clearTitle(titleHash: String)
 
     /**

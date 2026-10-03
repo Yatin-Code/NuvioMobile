@@ -3,12 +3,13 @@ package com.nuvio.app.features.player
 /**
  * Contributor-side capture planning (commonMain, pure logic, no platform APIs).
  *
- * When the registry has no previews for a title (lookup 404 -> overlay stays
+ * When the registry has no coverage for a title (lookup 404 -> overlay stays
  * silent by design), the app can capture its own thumbnails during playback and
  * later upload them via [SeekPreviewUpload]. This file holds everything that
- * needs no platform: the capture schedule, the sprite-sheet layout math, the
- * positional VTT writer (same wire format the registry serves), and the
- * per-title disk-bucket hash.
+ * needs no platform: the capture schedule (coverage-aware, so a partial
+ * version is striped from its coverage end onward instead of from 0), the
+ * sprite-sheet layout math, the positional VTT writer (same wire format the
+ * registry serves), and the per-title disk-bucket hash.
  *
  * Platform supplies the actual pixels: a 320x180 JPEG per timestamp
  * ([SeekPreviewFrameCapture.grabFrame]), sheet stitching, and file storage.
@@ -29,10 +30,14 @@ const val SEEK_PREVIEW_CAPTURE_TILES_PER_SHEET =
 /** VTT file name inside the contribute payload. */
 const val SEEK_PREVIEW_CAPTURE_VTT_NAME = "thumbnails-capture.vtt"
 
-/** Auto-upload once this many tiles are banked, without waiting for completion. */
-const val SEEK_PREVIEW_CONTRIBUTE_TILE_THRESHOLD = 50
+/**
+ * Bundle size: flush a contribution every 48 banked tiles. 48 slots on the
+ * 10s grid = 8 minutes of coverage per upload, which the registry serves as a
+ * `pending` version while the rest of the title is still being striped.
+ */
+const val SEEK_PREVIEW_CONTRIBUTE_BUNDLE_TILES = 48
 
-/** Below this many tiles an upload is not worth the bytes; keep capturing. */
+/** Below this many pending tiles an upload is not worth the bytes; keep capturing. */
 const val SEEK_PREVIEW_CONTRIBUTE_MIN_TILES = 5
 
 /** Max 1 frame grab per 5s during playback (never jank playback). */
@@ -43,6 +48,28 @@ const val SEEK_PREVIEW_CAPTURE_POLICY_RECHECK_MS = 30_000L
 
 /** Idle (paused/buffering) recheck cadence while waiting to resume grabbing. */
 const val SEEK_PREVIEW_CAPTURE_IDLE_RECHECK_MS = 5_000L
+
+/** Wait this long before retrying a bundle the registry did not accept. */
+const val SEEK_PREVIEW_CONTRIBUTE_FLUSH_BACKOFF_MS = 120_000L
+
+/** Whole flush (compose + POST) is bounded; a hung socket must not stall capture. */
+const val SEEK_PREVIEW_CONTRIBUTE_FLUSH_TIMEOUT_MS = 180_000L
+
+/** Registry re-read after a bundle (self-unlock) is guarded like the first probe. */
+const val SEEK_PREVIEW_CONTRIBUTE_REFRESH_TIMEOUT_MS = 20_000L
+
+/**
+ * Refused bundles tolerated before the session gives up. A registry that merges
+ * same-duration contributions never refuses a non-overlapping bundle; one that
+ * does is not going to start mid-session, so stop instead of POSTing all evening.
+ */
+const val SEEK_PREVIEW_CONTRIBUTE_MAX_REFUSALS = 3
+
+/** Grab progress heartbeat in the debug viewer: every Nth banked tile. */
+const val SEEK_PREVIEW_CONTRIBUTE_LOG_EVERY = 12
+
+/** Schedule guard: at most this many grid slots are ever planned (~11h at 10s). */
+const val SEEK_PREVIEW_CAPTURE_MAX_SLOTS = 4_000
 
 fun sheetCaptureFileName(sheetIndex: Int): String = "sheet-c-$sheetIndex.jpg"
 
@@ -64,6 +91,10 @@ data class SeekPreviewSheetFile(
  * Deterministic sheet cell for [timestampMs]: slot index = timestamp/interval,
  * sheet = slot / 25, cell = slot % 25. The VTT writer and the platform sheet
  * stitcher both use this, so cues always point at the right cell.
+ *
+ * Sheet numbering is ABSOLUTE (from the whole-title grid, never per bundle),
+ * so two bundles of the same title reuse the same file names and a re-uploaded
+ * range simply overwrites them on the registry.
  */
 fun tileBoxForTimestamp(
     timestampMs: Long,
@@ -83,20 +114,39 @@ fun tileBoxForTimestamp(
 }
 
 /**
- * Next timestamps to capture: one per [intervalMs] slot in time order,
- * skipping anything already in [alreadyCaptured]. Returns at most [limit].
+ * Start of the grid slot holding [timeMs] (never negative). The coverage
+ * anchor uses it so a plan can start "at the registry's coverage end"
+ * without re-grabbing the slot that end already covers.
+ */
+fun slotStartFor(
+    timeMs: Long,
+    intervalMs: Long = SEEK_PREVIEW_CAPTURE_INTERVAL_MS,
+): Long {
+    val safeInterval = intervalMs.takeIf { it > 0L } ?: SEEK_PREVIEW_CAPTURE_INTERVAL_MS
+    return (timeMs.coerceAtLeast(0L) / safeInterval) * safeInterval
+}
+
+/**
+ * Next timestamps to capture: one per [intervalMs] slot in time order, starting
+ * at the slot holding [startFromMs] (the registry's coverage end once a partial
+ * version is served, 0 for a full miss), skipping anything in
+ * [alreadyCaptured] (locally banked, failed this session, or already served by
+ * the registry). Returns at most [limit].
  */
 fun captureTimestampsFor(
     durationMs: Long,
     intervalMs: Long = SEEK_PREVIEW_CAPTURE_INTERVAL_MS,
     alreadyCaptured: Set<Long> = emptySet(),
     limit: Int = Int.MAX_VALUE,
+    startFromMs: Long = 0L,
 ): List<Long> {
     if (durationMs <= 0L || intervalMs <= 0L || limit <= 0) return emptyList()
     // Guard against bogus durations blowing up the schedule.
-    val slotCount = ((durationMs + intervalMs - 1L) / intervalMs).toInt().coerceAtMost(4_000)
+    val slotCount = ((durationMs + intervalMs - 1L) / intervalMs)
+        .toInt()
+        .coerceAtMost(SEEK_PREVIEW_CAPTURE_MAX_SLOTS)
+    var slot = (startFromMs.coerceAtLeast(0L) / intervalMs).toInt().coerceIn(0, slotCount)
     val out = ArrayList<Long>(minOf(slotCount, limit.coerceAtMost(1_024)))
-    var slot = 0
     while (slot < slotCount && out.size < limit) {
         val ts = slot * intervalMs
         if (ts < durationMs && ts !in alreadyCaptured) out.add(ts)
@@ -123,6 +173,40 @@ fun formatSeekCaptureTimestamp(timeMs: Long): String {
         if (millis < 10L) append('0')
         append(millis)
     }
+}
+
+/**
+ * Longest run of grid-adjacent slots in [timestampsMs], ascending.
+ *
+ * A bundle must be a contiguous slot run: the registry infers the grid from the
+ * MEDIAN cue-start step and rejects anything outside {5,10,30}s
+ * (`bad_interval`), so a holey bundle can be refused outright. Grab failures
+ * and unreadable files leave holes, so the flush sends the longest clean run
+ * and the rest stays pending for the next bundle.
+ *
+ * Order-insensitive input (a set, a sorted map, a playhead-ordered list).
+ * Negative timestamps are ignored.
+ */
+fun longestContiguousSlotRun(
+    timestampsMs: Collection<Long>,
+    intervalMs: Long = SEEK_PREVIEW_CAPTURE_INTERVAL_MS,
+): List<Long> {
+    val safeInterval = intervalMs.takeIf { it > 0L } ?: SEEK_PREVIEW_CAPTURE_INTERVAL_MS
+    val slots = timestampsMs.filter { it >= 0L }.toSortedSet()
+    if (slots.isEmpty()) return emptyList()
+    var best: List<Long> = emptyList()
+    var run = ArrayList<Long>()
+    var previous = Long.MIN_VALUE
+    for (ts in slots) {
+        if (run.isNotEmpty() && ts != previous + safeInterval) {
+            if (run.size > best.size) best = run
+            run = ArrayList()
+        }
+        run.add(ts)
+        previous = ts
+    }
+    if (run.size > best.size) best = run
+    return best
 }
 
 /**

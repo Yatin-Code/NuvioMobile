@@ -55,9 +55,17 @@ actual object SeekPreviewFrameCapture {
             runCatching { saveTileSync(titleHash, timestampMs, jpeg) }.getOrDefault(false)
         }
 
-    actual suspend fun loadTiles(titleHash: String): Map<Long, ByteArray> =
+    actual suspend fun loadTiles(
+        titleHash: String,
+        timestampsMs: Collection<Long>,
+    ): Map<Long, ByteArray> =
         withContext(Dispatchers.IO) {
-            runCatching { loadTilesSync(titleHash) }.getOrDefault(emptyMap())
+            runCatching { loadTilesSync(titleHash, timestampsMs) }.getOrDefault(emptyMap())
+        }
+
+    actual suspend fun listTileTimestamps(titleHash: String): List<Long> =
+        withContext(Dispatchers.IO) {
+            runCatching { listTileTimestampsSync(titleHash) }.getOrDefault(emptyList())
         }
 
     actual suspend fun clearTitle(titleHash: String) {
@@ -199,15 +207,39 @@ actual object SeekPreviewFrameCapture {
             .forEach { runCatching { it.delete() } }
     }
 
-    private fun loadTilesSync(titleHash: String): Map<Long, ByteArray> {
+    /** Timestamps of persisted tiles, ascending, without reading any JPEG bytes. */
+    private fun listTileTimestampsSync(titleHash: String): List<Long> {
+        val dir = titleDir(titleHash) ?: return emptyList()
+        val files = dir.listFiles { file ->
+            file.isFile && file.name.startsWith("tile-") && file.name.endsWith(".jpg")
+        } ?: return emptyList()
+        val out = ArrayList<Long>(files.size)
+        for (file in files) {
+            val timestampMs = file.name.removePrefix("tile-").removeSuffix(".jpg").toLongOrNull()
+                ?: continue
+            if (timestampMs < 0L || file.length() <= 0L) continue
+            out.add(timestampMs)
+        }
+        return out.sorted()
+    }
+
+    /**
+     * Reads persisted tiles. [wantedMs] narrows the read to those timestamps
+     * (bundle flush reads ~48 tiles out of a bucket that can hold thousands);
+     * an empty collection reads everything. File listing still walks the
+     * directory, so the tile COUNT is known even in the narrowed case.
+     */
+    private fun loadTilesSync(titleHash: String, wantedMs: Collection<Long>): Map<Long, ByteArray> {
         val dir = titleDir(titleHash) ?: return emptyMap()
         val files = dir.listFiles { file ->
             file.isFile && file.name.startsWith("tile-") && file.name.endsWith(".jpg")
         } ?: return emptyMap()
-        val out = LinkedHashMap<Long, ByteArray>(files.size)
+        val wanted = if (wantedMs.isEmpty()) null else HashSet(wantedMs)
+        val out = LinkedHashMap<Long, ByteArray>(if (wanted == null) files.size else wanted.size)
         for (file in files) {
             val timestampMs = file.name.removePrefix("tile-").removeSuffix(".jpg").toLongOrNull()
                 ?: continue
+            if (wanted != null && !wanted.contains(timestampMs)) continue
             if (timestampMs < 0L || file.length() <= 0L || file.length() > MAX_TILE_FILE_BYTES) continue
             out[timestampMs] = runCatching { file.readBytes() }.getOrNull()?.takeIf { it.isNotEmpty() }
                 ?: continue
