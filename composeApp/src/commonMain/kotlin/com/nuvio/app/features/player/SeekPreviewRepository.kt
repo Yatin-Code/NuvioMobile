@@ -1,6 +1,5 @@
 package com.nuvio.app.features.player
 
-import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.httpGetText
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
@@ -20,7 +19,6 @@ import kotlinx.serialization.json.longOrNull
  * SILENT null on 404 / any error: seeking always works, just without preview.
  */
 object SeekPreviewRepository {
-    private val log = Logger.withTag("SeekPreview")
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     private const val MAX_CACHED_TRACKS = 16
@@ -30,10 +28,10 @@ object SeekPreviewRepository {
 
     suspend fun loadTrack(query: SeekPreviewQuery): SeekPreviewTrack? {
         val url = query.registryUrl
-        log.d { "loadTrack url=$url" }
+        seekPreviewLog("loadTrack url=$url")
         synchronized(lock) {
             if (trackCache.containsKey(url)) {
-                log.d { "loadTrack cache hit url=$url track=${trackCache[url] != null}" }
+                seekPreviewLog("loadTrack cache hit url=$url track=${trackCache[url] != null}")
                 return trackCache[url]
             }
         }
@@ -42,10 +40,10 @@ object SeekPreviewRepository {
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {
-            log.d { "loadTrack fetch failed url=$url err=${e.message}" }
+            seekPreviewLog("loadTrack fetch failed url=$url err=${e.message}")
             null
         }
-        log.d { "loadTrack result url=$url track=${track != null} cues=${track?.cues?.size}" }
+        seekPreviewLog("loadTrack result url=$url track=${track != null} cues=${track?.cues?.size}")
         synchronized(lock) {
             if (trackCache.size >= MAX_CACHED_TRACKS) trackCache.clear()
             trackCache[url] = track
@@ -61,22 +59,22 @@ object SeekPreviewRepository {
         val manifest: String = try {
             httpGetText(query.registryUrl)
         } catch (e: Exception) {
-            log.d { "fetchTrack manifest GET failed url=${query.registryUrl} err=${e.message}" }
+            seekPreviewLog("fetchTrack manifest GET failed url=${query.registryUrl} err=${e.message}")
             return null
         }
         val entry = parseRegistryManifest(manifest)
         if (entry == null) {
-            log.d { "fetchTrack manifest parse failed url=${query.registryUrl} body=${manifest.take(200)}" }
+            seekPreviewLog("fetchTrack manifest parse failed url=${query.registryUrl} body=${manifest.take(200)}")
             return null
         }
         val vttText: String = try {
             httpGetText(entry.vttUrl)
         } catch (e: Exception) {
-            log.d { "fetchTrack VTT GET failed vtt=${entry.vttUrl} err=${e.message}" }
+            seekPreviewLog("fetchTrack VTT GET failed vtt=${entry.vttUrl} err=${e.message}")
             return null
         }
         val cues = parseSeekPreviewVtt(vttText, entry.vttUrl)
-        log.d { "fetchTrack vtt=${entry.vttUrl} cues=${cues.size} srcDur=${entry.sourceDurationMs} scale=${entry.scale}" }
+        seekPreviewLog("fetchTrack vtt=${entry.vttUrl} cues=${cues.size} srcDur=${entry.sourceDurationMs} scale=${entry.scale}")
         if (cues.isEmpty()) return null
         return SeekPreviewTrack(
             vttUrl = entry.vttUrl,

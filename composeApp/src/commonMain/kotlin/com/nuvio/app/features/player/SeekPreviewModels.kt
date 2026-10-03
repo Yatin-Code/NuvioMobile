@@ -131,8 +131,7 @@ internal fun buildSeekPreviewQuery(
     durationMs: Long,
 ): SeekPreviewQuery? {
     if (durationMs <= 0L) {
-        co.touchlab.kermit.Logger.withTag("SeekPreview")
-            .d { "query null: badDuration parent=$parentMetaId video=$videoId type=$contentType" }
+        seekPreviewLog("query null: badDuration parent=$parentMetaId video=$videoId type=$contentType")
         return null
     }
     val cleanMetaImdb = metaImdbId?.takeIf { it.startsWith("tt") && it.length > 2 }
@@ -142,8 +141,7 @@ internal fun buildSeekPreviewQuery(
             ?: extractSeekImdbId(videoId)
             ?: cleanMetaImdb
         if (tmdbId == null && imdbId == null) {
-            co.touchlab.kermit.Logger.withTag("SeekPreview")
-                .d { "query null: noIds parent=$parentMetaId video=$videoId metaImdb=$metaImdbId" }
+            seekPreviewLog("query null: noIds parent=$parentMetaId video=$videoId metaImdb=$metaImdbId")
             return null
         }
         return MovieSeekPreviewQuery(tmdbId = tmdbId, imdbId = imdbId, durationMs = durationMs)

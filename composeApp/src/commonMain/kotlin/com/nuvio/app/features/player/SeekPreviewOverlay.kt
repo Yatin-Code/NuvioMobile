@@ -34,7 +34,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import co.touchlab.kermit.Logger
 import com.nuvio.app.core.ui.nuvioTypeScale
 import com.nuvio.app.core.ui.themePalette
 import kotlinx.coroutines.delay
@@ -58,26 +57,26 @@ internal fun SeekPreviewScrubOverlay(
     modifier: Modifier = Modifier,
 ) {
     if (params == null || !params.enabled) {
-        Logger.withTag("SeekPreview").d { "overlay skip paramsNull=${params == null} enabled=${params?.enabled}" }
+        seekPreviewLog("overlay skip paramsNull=${params == null} enabled=${params?.enabled}")
         return
     }
     val query = params.query
     if (query == null) {
-        Logger.withTag("SeekPreview").d { "overlay skip queryNull parentMeta? dur=${params.durationMs}" }
+        seekPreviewLog("overlay skip queryNull parentMeta? dur=${params.durationMs}")
         return
     }
     val durationMs = params.durationMs
     if (durationMs <= 0L) {
-        Logger.withTag("SeekPreview").d { "overlay skip badDuration query=$query" }
+        seekPreviewLog("overlay skip badDuration query=$query")
         return
     }
-    Logger.withTag("SeekPreview").d { "overlay query=$query dur=$durationMs scrubbing=${params.isScrubbing}" }
+    seekPreviewLog("overlay query=$query dur=$durationMs scrubbing=${params.isScrubbing}")
 
     var track by remember(query) { mutableStateOf<SeekPreviewTrack?>(null) }
     LaunchedEffect(query) {
         SeekPreviewSheetTiles.clear()
         track = SeekPreviewRepository.loadTrack(query)
-        Logger.withTag("SeekPreview").d { "overlay track loaded null=${track == null} cues=${track?.cues?.size}" }
+        seekPreviewLog("overlay track loaded null=${track == null} cues=${track?.cues?.size}")
     }
 
     // Linger: keep the card visible briefly after scrub ends.
@@ -94,7 +93,7 @@ internal fun SeekPreviewScrubOverlay(
     val positionMs = params.positionMs.coerceIn(0L, durationMs)
     val cue = track?.thumbnailFor(positionMs)
     if (track != null && cue == null) {
-        Logger.withTag("SeekPreview").d { "overlay no cue for pos=$positionMs cues=${track?.cues?.size}" }
+        seekPreviewLog("overlay no cue for pos=$positionMs cues=${track?.cues?.size}")
     }
     val tile by produceState<ImageBitmap?>(null, cue) {
         value = if (cue == null) {
@@ -103,7 +102,7 @@ internal fun SeekPreviewScrubOverlay(
             try {
                 SeekPreviewSheetTiles.tile(cue.imageUrl, cue.x, cue.y, cue.w, cue.h)
             } catch (e: Exception) {
-                Logger.withTag("SeekPreview").d { "overlay tile failed url=${cue.imageUrl} err=${e.message}" }
+                seekPreviewLog("overlay tile failed url=${cue.imageUrl} err=${e.message}")
                 null
             }
         }
