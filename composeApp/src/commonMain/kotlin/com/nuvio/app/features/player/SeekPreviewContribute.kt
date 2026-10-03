@@ -327,8 +327,9 @@ private suspend fun PlayerScreenRuntime.runSeekPreviewContribute() {
 
     while (!playbackSnapshot.isEnded && errorMessage == null && !contribution.done) {
         val pending = contribution.pendingTiles()
-        val backoffOver = backoffStartedAt == null ||
-            TimeSource.Monotonic.markNow().elapsedNow() >=
+        val startedAt = backoffStartedAt
+        val backoffOver = startedAt == null ||
+            startedAt.elapsedNow() >=
                 SEEK_PREVIEW_CONTRIBUTE_FLUSH_BACKOFF_MS.milliseconds
         if (pending.size >= SEEK_PREVIEW_CONTRIBUTE_BUNDLE_TILES && backoffOver) {
             // Bundle boundary: flush what is banked, then keep capturing the
