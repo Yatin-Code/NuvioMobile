@@ -1,0 +1,51 @@
+# Test-release APK for the OpenPeek seek-preview fork.
+# Manual dispatch, debug-signed (no keystore secrets), GitHub runners only.
+name: Build Seek Test APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to create
+        required: true
+        default: v0.1-seek
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build + release debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build full debug APKs
+        run: ./gradlew :androidApp:assembleFullDebug --stacktrace
+
+      - name: Create GitHub release with APKs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          mapfile -t apks < <(find androidApp/build/outputs/apk/full/debug -maxdepth 1 -name '*.apk' -print | sort)
+          if (( ${#apks[@]} == 0 )); then
+            echo "No APKs produced." >&2
+            exit 1
+          fi
+          gh release create "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "Seek previews (OpenPeek backend) ${RELEASE_TAG}" \
+            --notes "Registry-backed scrub thumbnails + contributor capture (Android). Test build, debug-signed." \
+            --prerelease \
+            "${apks[@]}"
