@@ -370,6 +370,23 @@ private fun PlayerScreenRuntime.RenderPlayerControls(displayedPositionMs: Long, 
                 playerController?.seekTo(positionMs)
                 scheduleProgressSyncAfterSeek()
             },
+            seekPreview = SeekPreviewParams(
+                query = buildSeekPreviewQuery(
+                    parentMetaId = parentMetaId,
+                    contentType = contentType ?: parentMetaType,
+                    videoId = activeVideoId,
+                    seasonNumber = activeSeasonNumber,
+                    episodeNumber = activeEpisodeNumber,
+                    metaImdbId = (metaUiState.meta ?: playerMeta)
+                        ?.takeIf { it.id == parentMetaId }
+                        ?.imdbId,
+                    durationMs = playbackSnapshot.durationMs,
+                ),
+                enabled = playerSettingsUiState.seekPreviewEnabled,
+                isScrubbing = isScrubbingTimeline,
+                positionMs = displayedPositionMs,
+                durationMs = playbackSnapshot.durationMs,
+            ),
             horizontalSafePadding = horizontalSafePadding,
             modifier = Modifier.fillMaxSize(),
         )

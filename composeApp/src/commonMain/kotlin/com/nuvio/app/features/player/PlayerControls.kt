@@ -118,6 +118,7 @@ internal fun PlayerControlsShell(
     onScrubFinished: (Long) -> Unit,
     horizontalSafePadding: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier,
+    seekPreview: SeekPreviewParams? = null,
 ) {
     val density = LocalDensity.current
     var timelineHeight by remember { mutableStateOf(0.dp) }
@@ -252,6 +253,7 @@ internal fun PlayerControlsShell(
                     onAudioClick = onAudioClick,
                     onSourcesClick = onSourcesClick,
                     onEpisodesClick = onEpisodesClick,
+                    seekPreview = seekPreview,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
@@ -289,6 +291,7 @@ internal fun PlayerControlsShell(
                             onInteraction()
                             onScrubFinished(it)
                         },
+                        seekPreview = seekPreview,
                     )
                     PlayerControlActions(
                         playbackSnapshot = playbackSnapshot,
@@ -610,6 +613,7 @@ private fun ProgressControls(
     onSourcesClick: (() -> Unit)? = null,
     onEpisodesClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    seekPreview: SeekPreviewParams? = null,
 ) {
     val aspectRatioPainter = appIconPainter(AppIconResource.PlayerAspectRatio)
     val subtitlesPainter = appIconPainter(AppIconResource.PlayerSubtitles)
@@ -624,6 +628,7 @@ private fun ProgressControls(
             metrics = metrics,
             onScrubChange = onScrubChange,
             onScrubFinished = onScrubFinished,
+            seekPreview = seekPreview,
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -691,10 +696,14 @@ internal fun PlayerSeekBar(
     onScrubChange: (Long) -> Unit,
     onScrubFinished: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    seekPreview: SeekPreviewParams? = null,
 ) {
     val seekDurationMs = durationMs.coerceAtLeast(1L)
     val seekDescription = stringResource(Res.string.player_seek_position)
     Column(modifier = modifier) {
+        if (seekPreview != null) {
+            SeekPreviewScrubOverlay(params = seekPreview)
+        }
         Slider(
             modifier = Modifier
                 .fillMaxWidth()

@@ -32,6 +32,7 @@ import com.nuvio.app.features.mdblist.MdbListSettingsStorage
 import com.nuvio.app.features.notifications.EpisodeReleaseNotificationPlatform
 import com.nuvio.app.features.notifications.EpisodeReleaseNotificationsStorage
 import com.nuvio.app.features.player.PlayerSettingsStorage
+import com.nuvio.app.features.player.SeekPreviewFrameCapture
 import com.nuvio.app.features.player.PlayerTrackPreferenceStorage
 import com.nuvio.app.features.player.ExternalPlayerPlatform
 import com.nuvio.app.features.player.SubtitleFileCache
@@ -104,6 +105,7 @@ open class MainActivity : AppCompatActivity() {
         P2pStreamingEngine.initialize(applicationContext)
         ExternalPlayerPlatform.initialize(applicationContext)
         SubtitleFileCache.initialize(applicationContext)
+        SeekPreviewFrameCapture.initialize(applicationContext)
         ProfileStorage.initialize(applicationContext)
         AvatarStorage.initialize(applicationContext)
         ProfilePinCacheStorage.initialize(applicationContext)

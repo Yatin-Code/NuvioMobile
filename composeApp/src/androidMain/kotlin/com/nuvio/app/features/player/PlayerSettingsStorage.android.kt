@@ -65,6 +65,8 @@ actual object PlayerSettingsStorage {
     private const val streamAutoPlayRegexKey = "stream_auto_play_regex"
     private const val streamAutoPlayTimeoutSecondsKey = "stream_auto_play_timeout_seconds"
     private const val skipIntroEnabledKey = "skip_intro_enabled"
+    private const val seekPreviewEnabledKey = "seek_preview_enabled"
+    private const val seekPreviewContributeEnabledKey = "seek_preview_contribute_enabled"
     private const val autoSkipMovieCreditsKey = "auto_skip_movie_credits"
     private const val autoSkipSegmentTypesKey = "auto_skip_segment_types"
     private const val autoSkipPostCreditsKey = "auto_skip_post_credits"
@@ -141,6 +143,7 @@ actual object PlayerSettingsStorage {
         streamAutoPlayRegexKey,
         streamAutoPlayTimeoutSecondsKey,
         skipIntroEnabledKey,
+        seekPreviewEnabledKey,
         autoSkipMovieCreditsKey,
         autoSkipSegmentTypesKey,
         autoSkipPostCreditsKey,
@@ -890,6 +893,42 @@ actual object PlayerSettingsStorage {
             ?.apply()
     }
 
+    actual fun loadSeekPreviewEnabled(): Boolean? =
+        preferences?.let { sharedPreferences ->
+            val key = ProfileScopedKey.of(seekPreviewEnabledKey)
+            if (sharedPreferences.contains(key)) {
+                sharedPreferences.getBoolean(key, true)
+            } else {
+                null
+            }
+        }
+
+    actual fun saveSeekPreviewEnabled(enabled: Boolean) {
+        preferences
+            ?.edit()
+            ?.putBoolean(ProfileScopedKey.of(seekPreviewEnabledKey), enabled)
+            ?.apply()
+    }
+
+    // Device-local on purpose: uploading costs data, so this never syncs
+    // across devices (same treatment as the intro-submit toggle).
+    actual fun loadSeekPreviewContributeEnabled(): Boolean? =
+        preferences?.let { sharedPreferences ->
+            val key = ProfileScopedKey.of(seekPreviewContributeEnabledKey)
+            if (sharedPreferences.contains(key)) {
+                sharedPreferences.getBoolean(key, false)
+            } else {
+                null
+            }
+        }
+
+    actual fun saveSeekPreviewContributeEnabled(enabled: Boolean) {
+        preferences
+            ?.edit()
+            ?.putBoolean(ProfileScopedKey.of(seekPreviewContributeEnabledKey), enabled)
+            ?.apply()
+    }
+
     actual fun loadAnimeSkipEnabled(): Boolean? =
         preferences?.let { sharedPreferences ->
             val key = ProfileScopedKey.of(animeSkipEnabledKey)
@@ -1265,6 +1304,7 @@ actual object PlayerSettingsStorage {
         loadStreamAutoPlayRegex()?.let { put(streamAutoPlayRegexKey, encodeSyncString(it)) }
         loadStreamAutoPlayTimeoutSeconds()?.let { put(streamAutoPlayTimeoutSecondsKey, encodeSyncInt(it)) }
         loadSkipIntroEnabled()?.let { put(skipIntroEnabledKey, encodeSyncBoolean(it)) }
+        loadSeekPreviewEnabled()?.let { put(seekPreviewEnabledKey, encodeSyncBoolean(it)) }
         loadAutoSkipMovieCredits()?.let { put(autoSkipMovieCreditsKey, encodeSyncBoolean(it)) }
         loadAutoSkipSegmentTypes()?.let { put(autoSkipSegmentTypesKey, encodeSyncStringSet(it)) }
         loadAutoSkipPostCredits()?.let { put(autoSkipPostCreditsKey, encodeSyncBoolean(it)) }
@@ -1346,6 +1386,7 @@ actual object PlayerSettingsStorage {
         payload.decodeSyncString(streamAutoPlayRegexKey)?.let(::saveStreamAutoPlayRegex)
         payload.decodeSyncInt(streamAutoPlayTimeoutSecondsKey)?.let(::saveStreamAutoPlayTimeoutSeconds)
         payload.decodeSyncBoolean(skipIntroEnabledKey)?.let(::saveSkipIntroEnabled)
+        payload.decodeSyncBoolean(seekPreviewEnabledKey)?.let(::saveSeekPreviewEnabled)
         payload.decodeSyncBoolean(autoSkipMovieCreditsKey)?.let(::saveAutoSkipMovieCredits)
         payload.decodeSyncStringSet(autoSkipSegmentTypesKey)?.let(::saveAutoSkipSegmentTypes)
         payload.decodeSyncBoolean(autoSkipPostCreditsKey)?.let(::saveAutoSkipPostCredits)

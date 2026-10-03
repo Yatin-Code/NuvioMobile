@@ -67,6 +67,8 @@ data class PlayerSettingsUiState(
     val streamAutoPlayRegex: String = "",
     val streamAutoPlayTimeoutSeconds: Int = 3,
     val skipIntroEnabled: Boolean = true,
+    val seekPreviewEnabled: Boolean = true,
+    val seekPreviewContributeEnabled: Boolean = false,
     val autoSkipSegmentTypes: Set<AutoSkipSegmentType> = emptySet(),
     val animeSkipEnabled: Boolean = false,
     val animeSkipClientId: String = "",
@@ -138,6 +140,8 @@ object PlayerSettingsRepository {
     private var streamAutoPlayRegex = ""
     private var streamAutoPlayTimeoutSeconds = 3
     private var skipIntroEnabled = true
+    private var seekPreviewEnabled = true
+    private var seekPreviewContributeEnabled = false
     private var autoSkipSegmentTypes: Set<AutoSkipSegmentType> = emptySet()
     private var animeSkipEnabled = false
     private var animeSkipClientId = ""
@@ -214,6 +218,8 @@ object PlayerSettingsRepository {
         streamAutoPlayRegex = ""
         streamAutoPlayTimeoutSeconds = 3
         skipIntroEnabled = true
+        seekPreviewEnabled = true
+        seekPreviewContributeEnabled = false
         autoSkipSegmentTypes = emptySet()
         animeSkipEnabled = false
         animeSkipClientId = ""
@@ -342,6 +348,8 @@ object PlayerSettingsRepository {
             PlayerSettingsStorage.saveStreamAutoPlayTimeoutSeconds(streamAutoPlayTimeoutSeconds)
         }
         skipIntroEnabled = PlayerSettingsStorage.loadSkipIntroEnabled() ?: true
+        seekPreviewEnabled = PlayerSettingsStorage.loadSeekPreviewEnabled() ?: true
+        seekPreviewContributeEnabled = PlayerSettingsStorage.loadSeekPreviewContributeEnabled() ?: false
         autoSkipSegmentTypes = PlayerSettingsStorage.loadAutoSkipSegmentTypes()
             ?.mapNotNull(AutoSkipSegmentType::fromStoredValue)?.toSet() ?: buildSet {
                 if (PlayerSettingsStorage.loadAutoSkipMovieCredits() == true) add(AutoSkipSegmentType.MOVIE_CREDITS)
@@ -689,6 +697,22 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveSkipIntroEnabled(enabled)
     }
 
+    fun setSeekPreviewEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (seekPreviewEnabled == enabled) return
+        seekPreviewEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveSeekPreviewEnabled(enabled)
+    }
+
+    fun setSeekPreviewContributeEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (seekPreviewContributeEnabled == enabled) return
+        seekPreviewContributeEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveSeekPreviewContributeEnabled(enabled)
+    }
+
     fun setAutoSkipSegmentTypeEnabled(segmentType: AutoSkipSegmentType, enabled: Boolean) {
         ensureLoaded()
         val updated = if (enabled) autoSkipSegmentTypes + segmentType else autoSkipSegmentTypes - segmentType
@@ -1011,6 +1035,8 @@ object PlayerSettingsRepository {
             streamAutoPlayRegex = streamAutoPlayRegex,
             streamAutoPlayTimeoutSeconds = streamAutoPlayTimeoutSeconds,
             skipIntroEnabled = skipIntroEnabled,
+            seekPreviewEnabled = seekPreviewEnabled,
+            seekPreviewContributeEnabled = seekPreviewContributeEnabled,
             autoSkipSegmentTypes = autoSkipSegmentTypes,
             animeSkipEnabled = animeSkipEnabled,
             animeSkipClientId = animeSkipClientId,

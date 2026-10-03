@@ -1113,6 +1113,29 @@ private fun PlaybackSettingsSection(
         }
 
         SettingsSection(
+            title = stringResource(Res.string.settings_playback_section_seek_preview),
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(isTablet = isTablet) {
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_playback_seek_preview),
+                    description = stringResource(Res.string.settings_playback_seek_preview_description),
+                    checked = autoPlayPlayerSettings.seekPreviewEnabled,
+                    isTablet = isTablet,
+                    onCheckedChange = PlayerSettingsRepository::setSeekPreviewEnabled,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_playback_seek_preview_contribute),
+                    description = stringResource(Res.string.settings_playback_seek_preview_contribute_description),
+                    checked = autoPlayPlayerSettings.seekPreviewContributeEnabled,
+                    isTablet = isTablet,
+                    onCheckedChange = PlayerSettingsRepository::setSeekPreviewContributeEnabled,
+                )
+            }
+        }
+
+        SettingsSection(
             title = stringResource(Res.string.settings_playback_section_next_episode),
             isTablet = isTablet,
         ) {

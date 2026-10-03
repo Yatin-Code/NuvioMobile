@@ -110,6 +110,7 @@ internal fun PlayerTimeline(
     onScrubFinished: (Long) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    seekPreview: SeekPreviewParams? = null,
 ) {
     val durationMs = snapshot.durationMs.coerceAtLeast(0L)
     val rangeEnd = durationMs.coerceAtLeast(1L).toFloat()
@@ -129,6 +130,10 @@ internal fun PlayerTimeline(
     )
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Column(modifier = modifier.fillMaxWidth()) {
+            if (seekPreview != null) {
+                SeekPreviewScrubOverlay(params = seekPreview)
+            }
         Slider(
             value = displayedPositionMs.coerceIn(0L, durationMs).toFloat(),
             onValueChange = { value ->
@@ -174,12 +179,13 @@ internal fun PlayerTimeline(
                         },
                 )
             },
-            modifier = modifier
+            modifier = Modifier
                 .fillMaxWidth()
                 .height(24.dp)
                 .wrapContentHeight(Alignment.Bottom, unbounded = true)
                 .requiredHeight(48.dp)
                 .semantics { contentDescription = description },
         )
+        }
     }
 }
