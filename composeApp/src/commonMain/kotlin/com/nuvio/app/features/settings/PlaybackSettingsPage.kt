@@ -1132,6 +1132,8 @@ private fun PlaybackSettingsSection(
                     isTablet = isTablet,
                     onCheckedChange = PlayerSettingsRepository::setSeekPreviewContributeEnabled,
                 )
+                SettingsGroupDivider(isTablet = isTablet)
+                SeekPreviewDebugLogRows(isTablet = isTablet)
             }
         }
 
@@ -2682,3 +2684,47 @@ private fun libassRenderTypeRes(renderType: String): StringResource = when (rend
 
 @Composable
 private fun libassRenderTypeLabel(renderType: String): String = stringResource(libassRenderTypeRes(renderType))
+
+/**
+ * On-screen seek-preview debug log (triage scaffolding): copy the recent
+ * preview events to the clipboard without adb, or clear them. Shows the
+ * line count plus the newest line so the state is visible at a glance.
+ */
+@Composable
+private fun SeekPreviewDebugLogRows(isTablet: Boolean) {
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    var tick by remember { mutableStateOf(0) }
+    var justCopied by remember { mutableStateOf(false) }
+    val lines = remember(tick) { com.nuvio.app.features.player.SeekPreviewDebugLogs.snapshot() }
+    if (justCopied) {
+        androidx.compose.runtime.LaunchedEffect(Unit) {
+            kotlinx.coroutines.delay(2_500L)
+            justCopied = false
+        }
+    }
+    SettingsNavigationRow(
+        title = stringResource(Res.string.settings_playback_seek_preview_debug_copy),
+        description = when {
+            justCopied -> stringResource(Res.string.settings_playback_seek_preview_debug_copy_copied)
+            lines.isEmpty() -> stringResource(Res.string.settings_playback_seek_preview_debug_copy_empty)
+            else -> lines.size.toString() + " lines — newest: " + lines.last().take(140)
+        },
+        isTablet = isTablet,
+        enabled = lines.isNotEmpty(),
+        onClick = {
+            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(lines.joinToString("\n")))
+            justCopied = true
+        },
+    )
+    SettingsGroupDivider(isTablet = isTablet)
+    SettingsNavigationRow(
+        title = stringResource(Res.string.settings_playback_seek_preview_debug_clear),
+        description = null,
+        isTablet = isTablet,
+        enabled = lines.isNotEmpty(),
+        onClick = {
+            com.nuvio.app.features.player.SeekPreviewDebugLogs.clear()
+            tick++
+        },
+    )
+}

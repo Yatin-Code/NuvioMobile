@@ -1,5 +1,5 @@
 package com.nuvio.app.features.player
 
-internal actual fun seekPreviewLog(message: String) {
+internal actual fun seekPreviewLogPlatform(message: String) {
     println("SeekPreview: $message")
 }
