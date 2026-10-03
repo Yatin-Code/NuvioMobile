@@ -30,6 +30,10 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
+      - name: Provide local.properties (empty = upstream debug defaults)
+        run: |
+          [ -f local.properties ] || touch local.properties
+
       - name: Build full debug APKs
         run: ./gradlew :androidApp:assembleFullDebug --stacktrace
 
