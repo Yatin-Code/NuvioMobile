@@ -34,6 +34,15 @@ actual object SeekPreviewSheetTiles {
             runCatching { tileSync(sheetUrl, x, y, w, h)?.asImageBitmap() }.getOrNull()
         }
 
+    actual suspend fun decodeTile(jpeg: ByteArray): ImageBitmap? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                if (jpeg.isEmpty()) return@runCatching null
+                val bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size) ?: return@runCatching null
+                bitmap.asImageBitmap()
+            }.getOrNull()
+        }
+
     actual fun clear() {
         synchronized(lock) {
             tileCache.evictAll()

@@ -43,10 +43,11 @@ const val SEEK_PREVIEW_CONTRIBUTE_MIN_TILES = 5
 /** Max 1 frame grab per 5s during playback (never jank playback). */
 const val SEEK_PREVIEW_CAPTURE_GRAB_THROTTLE_MS = 5_000L
 
-/** Recheck the wifi/charging gate this often while it reports not-allowed. */
-const val SEEK_PREVIEW_CAPTURE_POLICY_RECHECK_MS = 30_000L
-
-/** Idle (paused/buffering) recheck cadence while waiting to resume grabbing. */
+/**
+ * Recheck cadence while capture is parked: playback paused/buffering, or the
+ * plan has nothing left to stripe. There is no power/connectivity recheck —
+ * capture runs on any connection, so the loop only ever waits on playback state.
+ */
 const val SEEK_PREVIEW_CAPTURE_IDLE_RECHECK_MS = 5_000L
 
 /** Wait this long before retrying a bundle the registry did not accept. */

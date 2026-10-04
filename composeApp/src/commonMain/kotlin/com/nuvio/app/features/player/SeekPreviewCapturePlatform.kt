@@ -6,7 +6,7 @@ package com.nuvio.app.features.player
  * The common planner ([captureTimestampsFor]) decides *when*; this object does
  * the platform work: grabbing a 320x180 JPEG per timestamp, persisting tiles
  * under `cacheDir/capture/<title-hash>/`, stitching persisted tiles into
- * 5x5 sheets, and the best-effort wifi/charging gate.
+ * 5x5 sheets, and the permissive [captureAllowed] consent hook.
  *
  * SILENT contract: every function returns null/false/empty on any failure and
  * never throws (coroutine cancellation excepted). Capture must never interrupt
@@ -60,9 +60,10 @@ expect object SeekPreviewFrameCapture {
     suspend fun composeSheets(tiles: Map<Long, ByteArray>): List<SeekPreviewSheetFile>
 
     /**
-     * Best-effort unmetered-power gate: true when on wifi/unmetered or
-     * charging. Fail-open true when the state cannot be determined (no
-     * context/permission) — the 5s grab throttle still applies.
+     * Whether the platform would allow a capture right now. There is no
+     * unmetered-power gate any more (the contribute toggle is the only consent,
+     * and the settings row warns about data + battery), so every current
+     * platform reports true. Kept as the contract's hook for a future gate.
      */
     fun captureAllowed(): Boolean
 }

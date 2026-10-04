@@ -2,9 +2,10 @@ package com.nuvio.app.features.player
 
 /**
  * iOS contributor capture: silent stub (no on-device frame grabs yet).
- * [captureAllowed] reports false so the common contribute effect parks on the
- * power gate without doing any work; every other entry is a null/false/empty
- * no-op, so the bundle loop never reaches a platform that cannot serve it.
+ * [captureAllowed] reports false so the common contribute effect parks
+ * without doing any work (grabs are null/empty no-ops anyway); every other
+ * entry is a null/false/empty no-op, so the bundle loop never reaches a
+ * platform that cannot serve it.
  */
 actual object SeekPreviewFrameCapture {
     actual suspend fun grabFrame(

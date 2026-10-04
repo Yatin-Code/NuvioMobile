@@ -18,9 +18,12 @@ import kotlin.time.Duration.Companion.milliseconds
  *  - seek previews are enabled ([PlayerSettingsUiState.seekPreviewEnabled]),
  *  - the contribute toggle is on ([PlayerSettingsUiState.seekPreviewContributeEnabled],
  *    default OFF — uploading costs data),
- *  - the served registry version leaves something to stripe (see below),
- *  - the platform power gate allows it ([SeekPreviewFrameCapture.captureAllowed],
- *    best-effort wifi/charging; fail-open with the 5s throttle).
+ *  - the served registry version leaves something to stripe (see below).
+ *
+ * There is NO unmetered-power gate: the toggle is the only consent and capture
+ * runs on any connection, wifi or mobile data, with the 5s grab throttle as the
+ * only rate limit. The extra data + battery cost is warned about in the settings
+ * row next to the contribute toggle.
  *
  * One registry read at start ([SeekPreviewRepository.loadTrack]) is both probe
  * and coverage plan: its `covered_until_ms` (plus the cue slots of a partial
@@ -323,7 +326,11 @@ private suspend fun PlayerScreenRuntime.runSeekPreviewContribute() {
     )
 
     var backoffStartedAt: TimeMark? = null
-    var loggedGate = false
+
+    seekPreviewLog(
+        "contrib capturing on any connection (no unmetered-power gate); " +
+            "grab throttle ${SEEK_PREVIEW_CAPTURE_GRAB_THROTTLE_MS}ms",
+    )
 
     while (!playbackSnapshot.isEnded && errorMessage == null && !contribution.done) {
         val pending = contribution.pendingTiles()
@@ -341,31 +348,19 @@ private suspend fun PlayerScreenRuntime.runSeekPreviewContribute() {
             delay(SEEK_PREVIEW_CAPTURE_GRAB_THROTTLE_MS)
             continue
         }
-        val powerAllowed = SeekPreviewFrameCapture.captureAllowed()
         // The live playhead picks the slot inside the plan window, so a viewer
         // who joined mid-title stripes around where they are watching.
         val nextMs = contribution.nextTimestampMs(playbackSnapshot.positionMs)
-        if (nextMs != null && powerAllowed && playbackSnapshot.isPlaying && !playbackSnapshot.isLoading) {
-            if (loggedGate) {
-                seekPreviewLog("contrib ungated: capturing resumes")
-                loggedGate = false
-            }
+        if (nextMs != null && playbackSnapshot.isPlaying && !playbackSnapshot.isLoading) {
             grabSeekPreviewTile(contribution, nextMs, sourceUrl, headers)
             delay(SEEK_PREVIEW_CAPTURE_GRAB_THROTTLE_MS)
             continue
         }
-        if (!powerAllowed) {
-            if (!loggedGate) {
-                seekPreviewLog("contrib gated: waiting for unmetered power")
-                loggedGate = true
-            }
-            delay(SEEK_PREVIEW_CAPTURE_POLICY_RECHECK_MS)
-        } else if (nextMs == null) {
-            // Nothing left to stripe until playback ends or a bundle lands.
-            delay(SEEK_PREVIEW_CAPTURE_POLICY_RECHECK_MS)
-        } else {
-            delay(SEEK_PREVIEW_CAPTURE_IDLE_RECHECK_MS)
-        }
+        // Parked, for one of two reasons: playback is paused/buffering, or the
+        // plan has nothing left to stripe until playback ends or a bundle
+        // lands. Either way the wait is on playback state, never on a power or
+        // connectivity gate.
+        delay(SEEK_PREVIEW_CAPTURE_IDLE_RECHECK_MS)
     }
 
     if (errorMessage != null) {

@@ -57,6 +57,11 @@ private const val SeekPreviewLingerMs = 1500L
  * this device contributed that range itself, the contributor publishes the
  * refreshed version on [SeekPreviewTrackBus] and the card starts answering
  * without a restart.
+ *
+ * Local-first viewing (display-only): where the registry is silent, the card
+ * falls back to this device's own banked capture tiles (`tile-<ts>.jpg` in
+ * the title bucket, exact slots only, never past the highest banked slot).
+ * A served registry cue always wins, even if its sheet fetch fails.
  */
 @Composable
 internal fun SeekPreviewScrubOverlay(
@@ -83,16 +88,28 @@ internal fun SeekPreviewScrubOverlay(
         seekPreviewLog("overlay query=$query dur=$durationMs scrubbing=${params.isScrubbing}")
     }
     // No-cue is a per-scrub-frame log; keep it to once per scrub gesture so the
-    // debug ring buffer stays readable.
+    // debug ring buffer stays readable. Local-tile hits log at the same
+    // throttled verbosity.
     var noCueLogged by remember(query) { mutableStateOf(false) }
-    if (!params.isScrubbing) noCueLogged = false
+    var localHitLogged by remember(query) { mutableStateOf(false) }
+    if (!params.isScrubbing) {
+        noCueLogged = false
+        localHitLogged = false
+    }
 
     var track by remember(query) { mutableStateOf<SeekPreviewTrack?>(null) }
+    // Device-shared capture bucket for this title (persists across sessions,
+    // so a resumed title shows last session's banked past before any registry
+    // read lands). Listed once per title; pruning stays the platform's job.
+    val titleHash = remember(query) { seekPreviewTitleHash(query) }
+    var bankedSlots by remember(query) { mutableStateOf<Set<Long>>(emptySet()) }
     // Contributor-published refreshes land on the bus minutes into playback;
     // the generation counter is what wakes this overlay up for them.
     val publishedGeneration = SeekPreviewTrackBus.snapshot.generation
     LaunchedEffect(query) {
         SeekPreviewSheetTiles.clear()
+        SeekPreviewLocalTiles.clear()
+        bankedSlots = SeekPreviewFrameCapture.listTileTimestamps(titleHash).toSet()
         val fetched = SeekPreviewRepository.loadTrack(query)
         track = fetched ?: SeekPreviewTrackBus.trackFor(query.registryUrl)
         seekPreviewLog(
@@ -117,6 +134,16 @@ internal fun SeekPreviewScrubOverlay(
     LaunchedEffect(params.isScrubbing) {
         if (params.isScrubbing) {
             lingerVisible = true
+            // Re-list on scrub start: tiles banked during THIS playback land
+            // after the one-shot listing above; without this the watcher
+            // never sees their just-captured past until a title change.
+            bankedSlots = try {
+                SeekPreviewFrameCapture.listTileTimestamps(titleHash).toSet()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                bankedSlots
+            }
         } else {
             delay(SeekPreviewLingerMs)
             lingerVisible = false
@@ -124,27 +151,40 @@ internal fun SeekPreviewScrubOverlay(
     }
 
     val positionMs = params.positionMs.coerceIn(0L, durationMs)
-    // Floor lookup, bounded by the served coverage: a partial ("pending")
-    // version must stay silent past its last cue instead of repeating a stale
-    // tail tile (thumbnailFor compares covered_until_ms in source time).
-    val cue = track?.thumbnailFor(positionMs)
-    if (track != null && cue == null && !noCueLogged) {
+    // Strict precedence: the registry cue (floor lookup, bounded by the served
+    // coverage, so a partial ("pending") version stays silent past its last
+    // cue instead of repeating a stale tail tile) wins wherever it serves; the
+    // local bucket is consulted ONLY when it returns null, and only for exact
+    // banked slots at/below the highest banked slot. A sheet-fetch failure on
+    // a served cue stays blank by design — never a local fallback.
+    val source = resolveSeekPreviewSource(track, positionMs, bankedSlots)
+    val cue = (source as? SeekPreviewTileSource.Registry)?.cue
+    val localSlot = (source as? SeekPreviewTileSource.Local)?.slotTimestampMs
+    if (track != null && cue == null && localSlot == null && !noCueLogged) {
         noCueLogged = true
         seekPreviewLog(
             "overlay no cue for pos=$positionMs cues=${track?.cues?.size} " +
                 "covered=${track?.coveredUntilMs} status=${track?.status}",
         )
     }
-    val tile by produceState<ImageBitmap?>(null, cue) {
-        value = if (cue == null) {
-            null
-        } else {
-            try {
-                SeekPreviewSheetTiles.tile(cue.imageUrl, cue.x, cue.y, cue.w, cue.h)
-            } catch (e: Exception) {
-                seekPreviewLog("overlay tile failed url=${cue.imageUrl} err=${e.message}")
-                null
+    if (cue == null && localSlot != null && !localHitLogged) {
+        localHitLogged = true
+        seekPreviewLog(
+            "overlay local tile slot=$localSlot pos=$positionMs banked=${bankedSlots.size}",
+        )
+    }
+    val tile by produceState<ImageBitmap?>(null, cue, localSlot, titleHash) {
+        value = when {
+            cue != null -> {
+                try {
+                    SeekPreviewSheetTiles.tile(cue.imageUrl, cue.x, cue.y, cue.w, cue.h)
+                } catch (e: Exception) {
+                    seekPreviewLog("overlay tile failed url=${cue.imageUrl} err=${e.message}")
+                    null
+                }
             }
+            localSlot != null -> SeekPreviewLocalTiles.tileFor(titleHash, localSlot)
+            else -> null
         }
     }
 

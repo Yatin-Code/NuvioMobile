@@ -11,5 +11,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 expect object SeekPreviewSheetTiles {
     suspend fun tile(sheetUrl: String, x: Int, y: Int, w: Int, h: Int): ImageBitmap?
 
+    /** Decodes one standalone tile JPEG (local bucket `tile-<ts>.jpg`); null on any error. */
+    suspend fun decodeTile(jpeg: ByteArray): ImageBitmap?
+
     fun clear()
 }

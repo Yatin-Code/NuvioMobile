@@ -9,6 +9,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 actual object SeekPreviewSheetTiles {
     actual suspend fun tile(sheetUrl: String, x: Int, y: Int, w: Int, h: Int): ImageBitmap? = null
 
+    actual suspend fun decodeTile(jpeg: ByteArray): ImageBitmap? = null
+
     actual fun clear() {
     }
 }

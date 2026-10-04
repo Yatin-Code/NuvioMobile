@@ -6,9 +6,6 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.media.MediaMetadataRetriever
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
-import android.os.BatteryManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -79,28 +76,16 @@ actual object SeekPreviewFrameCapture {
             runCatching { composeSheetsSync(tiles) }.getOrDefault(emptyList())
         }
 
-    actual fun captureAllowed(): Boolean {
-        val context = appContext ?: return true
-        return runCatching {
-            var unmetered = false
-            try {
-                val connectivity = context.getSystemService(ConnectivityManager::class.java)
-                    ?: return@runCatching true
-                val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
-                if (capabilities != null) {
-                    val wifi = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
-                        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
-                    unmetered = wifi ||
-                        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
-                }
-            } catch (_: SecurityException) {
-                // No ACCESS_NETWORK_STATE: fail open, the 5s grab throttle still applies.
-                return@runCatching true
-            }
-            if (unmetered) return@runCatching true
-            context.getSystemService(BatteryManager::class.java)?.isCharging == true
-        }.getOrDefault(true)
-    }
+    /**
+     * No power gate: the contribute toggle is the only consent, and capture
+     * runs on any connection — the settings row warns about the extra mobile
+     * data and battery instead. The [SEEK_PREVIEW_CAPTURE_GRAB_THROTTLE_MS]
+     * grab throttle is the only rate limit.
+     *
+     * Kept because it is part of the expect contract; the contribute loop no
+     * longer consults it.
+     */
+    actual fun captureAllowed(): Boolean = true
 
     private fun grabFrameSync(
         sourceUrl: String,
