@@ -21,7 +21,12 @@ const val SEEK_PREVIEW_CAPTURE_INTERVAL_MS = 10_000L
 const val SEEK_PREVIEW_CAPTURE_TILE_WIDTH = 320
 const val SEEK_PREVIEW_CAPTURE_TILE_HEIGHT = 180
 
-/** Sheets are 5x5 grids (1600x900), same shape as spritegen output. */
+/**
+ * Sheets are 5x5 grids (1600x900) — the CLIENT upload shape, which is NOT
+ * spritegen's: stored sheets are 10x10 (3200x1800, 100 tiles). Nothing in the
+ * wire format depends on this being a grid: every cue carries its own
+ * `x/y/w/h`, so consumers MUST read the per-cue box and never assume a geometry.
+ */
 const val SEEK_PREVIEW_CAPTURE_SHEET_COLS = 5
 const val SEEK_PREVIEW_CAPTURE_SHEET_ROWS = 5
 const val SEEK_PREVIEW_CAPTURE_TILES_PER_SHEET =
