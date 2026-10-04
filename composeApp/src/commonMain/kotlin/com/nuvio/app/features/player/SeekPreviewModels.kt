@@ -17,6 +17,16 @@ package com.nuvio.app.features.player
 /** Registry base. Hardcoded for testing only — single const, see [SEEK_PREVIEW_REGISTRY_BASE]. */
 const val SEEK_PREVIEW_REGISTRY_BASE = "http://20.244.18.205:8080"
 
+/**
+ * Bootstrap registry API key: the `local-dev` row the registry seeds itself
+ * with (see registry/migrate.sql). Used whenever no custom key is stored so
+ * existing test builds keep working out of the box.
+ */
+const val SEEK_PREVIEW_DEFAULT_API_KEY = "local-dev-key"
+
+/** Key self-check route (quota-free server-side): GET {base}/v1/keys/validate. */
+const val SEEK_PREVIEW_KEYS_VALIDATE_PATH = "/v1/keys/validate"
+
 data class SeekPreviewCue(
     val startMs: Long,
     val imageUrl: String,

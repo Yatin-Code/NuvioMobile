@@ -1134,6 +1134,26 @@ private fun PlaybackSettingsSection(
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SeekPreviewDebugLogRows(isTablet = isTablet)
+                SettingsGroupDivider(isTablet = isTablet)
+                var showSeekPreviewApiKeyDialog by remember { mutableStateOf(false) }
+                val seekPreviewApiKeyNotSet = stringResource(Res.string.settings_playback_not_set)
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.settings_playback_seek_preview_api_key),
+                    description = maskSeekPreviewApiKey(autoPlayPlayerSettings.seekPreviewApiKey)
+                        ?: seekPreviewApiKeyNotSet,
+                    isTablet = isTablet,
+                    onClick = { showSeekPreviewApiKeyDialog = true },
+                )
+                if (showSeekPreviewApiKeyDialog) {
+                    SeekPreviewApiKeyDialog(
+                        initialValue = autoPlayPlayerSettings.seekPreviewApiKey,
+                        onSave = {
+                            PlayerSettingsRepository.setSeekPreviewApiKey(it)
+                            showSeekPreviewApiKeyDialog = false
+                        },
+                        onDismiss = { showSeekPreviewApiKeyDialog = false },
+                    )
+                }
             }
         }
 
@@ -2594,6 +2614,101 @@ private fun IntroDbApiKeyDialog(
                     errorMessage = null
                     scope.launch {
                         val isValid = com.nuvio.app.features.player.skip.SkipIntroRepository.verifyIntroDbApiKey(trimmed)
+                        isVerifying = false
+                        if (isValid) {
+                            onSave(trimmed)
+                        } else {
+                            errorMessage = invalidKeyMessage
+                        }
+                    }
+                },
+                style = DialogButtonStyle.Primary,
+                loading = isVerifying,
+            )
+        }
+    }
+}
+
+/**
+ * Masks a stored registry key, showing the last 4 characters only. Null when
+ * blank (no custom key stored) so the row falls back to "Not set".
+ */
+private fun maskSeekPreviewApiKey(apiKey: String): String? {
+    val trimmed = apiKey.trim()
+    if (trimmed.isEmpty()) return null
+    if (trimmed.length <= 4) return "••••"
+    return "•".repeat(trimmed.length - 4) + trimmed.takeLast(4)
+}
+
+/**
+ * Registry API-key dialog (Settings → Playback → SEEK PREVIEWS → "API key").
+ * Save validates the pasted key against GET {base}/v1/keys/validate first:
+ * an invalid key shows an error and is NOT stored. Clear drops the custom
+ * key (the bootstrap default applies again). Key errors surface here only —
+ * playback paths stay silent.
+ */
+@Composable
+private fun SeekPreviewApiKeyDialog(
+    initialValue: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var value by remember { mutableStateOf(initialValue) }
+    var isVerifying by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val invalidKeyMessage = stringResource(Res.string.settings_playback_seek_preview_api_key_invalid)
+
+    DialogSurface(
+        onDismissRequest = { if (!isVerifying) onDismiss() },
+        title = stringResource(Res.string.settings_playback_seek_preview_api_key),
+    ) {
+        Text(
+            text = stringResource(Res.string.settings_playback_seek_preview_api_key_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        SettingsSecretTextField(
+            value = value,
+            onValueChange = {
+                value = it
+                errorMessage = null
+            },
+            label = stringResource(Res.string.settings_playback_seek_preview_api_key),
+            modifier = Modifier.fillMaxWidth(),
+            isError = errorMessage != null,
+        )
+        if (errorMessage != null) {
+            Text(
+                text = errorMessage!!,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(start = 4.dp)
+            )
+        }
+        DialogButtons {
+            DialogButton(
+                text = stringResource(Res.string.action_cancel),
+                onClick = onDismiss,
+                enabled = !isVerifying,
+            )
+            DialogButton(
+                text = stringResource(Res.string.action_clear),
+                onClick = { onSave("") },
+                enabled = !isVerifying,
+            )
+            DialogButton(
+                text = stringResource(Res.string.action_save),
+                onClick = {
+                    val trimmed = value.trim()
+                    if (trimmed.isNotEmpty() && trimmed == initialValue.trim()) {
+                        onDismiss()
+                        return@DialogButton
+                    }
+                    isVerifying = true
+                    errorMessage = null
+                    scope.launch {
+                        val isValid = com.nuvio.app.features.player.SeekPreviewRepository.validateApiKey(trimmed)
                         isVerifying = false
                         if (isValid) {
                             onSave(trimmed)

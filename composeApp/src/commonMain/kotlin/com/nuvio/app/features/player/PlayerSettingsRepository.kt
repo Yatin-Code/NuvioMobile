@@ -69,6 +69,7 @@ data class PlayerSettingsUiState(
     val skipIntroEnabled: Boolean = true,
     val seekPreviewEnabled: Boolean = true,
     val seekPreviewContributeEnabled: Boolean = false,
+    val seekPreviewApiKey: String = SEEK_PREVIEW_DEFAULT_API_KEY,
     val autoSkipSegmentTypes: Set<AutoSkipSegmentType> = emptySet(),
     val animeSkipEnabled: Boolean = false,
     val animeSkipClientId: String = "",
@@ -142,6 +143,7 @@ object PlayerSettingsRepository {
     private var skipIntroEnabled = true
     private var seekPreviewEnabled = true
     private var seekPreviewContributeEnabled = false
+    private var seekPreviewApiKey = SEEK_PREVIEW_DEFAULT_API_KEY
     private var autoSkipSegmentTypes: Set<AutoSkipSegmentType> = emptySet()
     private var animeSkipEnabled = false
     private var animeSkipClientId = ""
@@ -220,6 +222,7 @@ object PlayerSettingsRepository {
         skipIntroEnabled = true
         seekPreviewEnabled = true
         seekPreviewContributeEnabled = false
+        seekPreviewApiKey = SEEK_PREVIEW_DEFAULT_API_KEY
         autoSkipSegmentTypes = emptySet()
         animeSkipEnabled = false
         animeSkipClientId = ""
@@ -350,6 +353,10 @@ object PlayerSettingsRepository {
         skipIntroEnabled = PlayerSettingsStorage.loadSkipIntroEnabled() ?: true
         seekPreviewEnabled = PlayerSettingsStorage.loadSeekPreviewEnabled() ?: true
         seekPreviewContributeEnabled = PlayerSettingsStorage.loadSeekPreviewContributeEnabled() ?: false
+        // Blank (cleared) falls back to the bootstrap key: "no custom key"
+        // and "empty string" behave the same everywhere downstream.
+        seekPreviewApiKey = PlayerSettingsStorage.loadSeekPreviewApiKey()
+            ?.trim()?.takeIf { it.isNotEmpty() } ?: SEEK_PREVIEW_DEFAULT_API_KEY
         autoSkipSegmentTypes = PlayerSettingsStorage.loadAutoSkipSegmentTypes()
             ?.mapNotNull(AutoSkipSegmentType::fromStoredValue)?.toSet() ?: buildSet {
                 if (PlayerSettingsStorage.loadAutoSkipMovieCredits() == true) add(AutoSkipSegmentType.MOVIE_CREDITS)
@@ -713,6 +720,19 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveSeekPreviewContributeEnabled(enabled)
     }
 
+    /**
+     * Stores the registry API key (trimmed; blank clears back to the
+     * bootstrap default on next load) and publishes to UI state.
+     */
+    fun setSeekPreviewApiKey(apiKey: String) {
+        ensureLoaded()
+        val normalized = apiKey.trim()
+        if (seekPreviewApiKey == normalized) return
+        seekPreviewApiKey = normalized
+        publish()
+        PlayerSettingsStorage.saveSeekPreviewApiKey(normalized)
+    }
+
     fun setAutoSkipSegmentTypeEnabled(segmentType: AutoSkipSegmentType, enabled: Boolean) {
         ensureLoaded()
         val updated = if (enabled) autoSkipSegmentTypes + segmentType else autoSkipSegmentTypes - segmentType
@@ -1037,6 +1057,7 @@ object PlayerSettingsRepository {
             skipIntroEnabled = skipIntroEnabled,
             seekPreviewEnabled = seekPreviewEnabled,
             seekPreviewContributeEnabled = seekPreviewContributeEnabled,
+            seekPreviewApiKey = seekPreviewApiKey,
             autoSkipSegmentTypes = autoSkipSegmentTypes,
             animeSkipEnabled = animeSkipEnabled,
             animeSkipClientId = animeSkipClientId,

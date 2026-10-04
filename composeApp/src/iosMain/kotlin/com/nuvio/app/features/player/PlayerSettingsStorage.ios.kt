@@ -65,6 +65,9 @@ actual object PlayerSettingsStorage {
     private const val skipIntroEnabledKey = "skip_intro_enabled"
     private const val seekPreviewEnabledKey = "seek_preview_enabled"
     private const val seekPreviewContributeEnabledKey = "seek_preview_contribute_enabled"
+    // Device-local: never added to syncKeys / exportToSyncPayload /
+    // replaceFromSyncPayload (same exclusion as the contribute toggle).
+    private const val seekPreviewApiKeyKey = "seek_preview_api_key"
     private const val autoSkipMovieCreditsKey = "auto_skip_movie_credits"
     private const val autoSkipSegmentTypesKey = "auto_skip_segment_types"
     private const val autoSkipPostCreditsKey = "auto_skip_post_credits"
@@ -787,6 +790,15 @@ actual object PlayerSettingsStorage {
 
     actual fun saveSeekPreviewContributeEnabled(enabled: Boolean) {
         NSUserDefaults.standardUserDefaults.setBool(enabled, forKey = ProfileScopedKey.of(seekPreviewContributeEnabledKey))
+    }
+
+    actual fun loadSeekPreviewApiKey(): String? {
+        val defaults = NSUserDefaults.standardUserDefaults
+        return defaults.stringForKey(ProfileScopedKey.of(seekPreviewApiKeyKey))
+    }
+
+    actual fun saveSeekPreviewApiKey(apiKey: String) {
+        NSUserDefaults.standardUserDefaults.setObject(apiKey, forKey = ProfileScopedKey.of(seekPreviewApiKeyKey))
     }
 
     actual fun loadAnimeSkipEnabled(): Boolean? {

@@ -1,7 +1,10 @@
 package com.nuvio.app.features.player
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -94,6 +97,7 @@ internal fun PlayerControlsShell(
     onRuntimeClick: () -> Unit = {},
     releaseInfo: String? = null,
     hideDetails: Boolean = false,
+    isScrubbingTimeline: Boolean = false,
     onNextEpisodeClick: (() -> Unit)? = null,
     onInteraction: () -> Unit = {},
     showPlaybackControls: Boolean = true,
@@ -245,6 +249,7 @@ internal fun PlayerControlsShell(
                     displayedPositionMs = displayedPositionMs,
                     metrics = metrics,
                     resizeMode = resizeMode,
+                    isScrubbingTimeline = isScrubbingTimeline,
                     onScrubChange = onScrubChange,
                     onScrubFinished = onScrubFinished,
                     onResizeModeClick = onResizeModeClick,
@@ -270,18 +275,24 @@ internal fun PlayerControlsShell(
                         .windowInsetsPadding(playerTimelineBottomInsets(metrics))
                         .padding(horizontal = metrics.horizontalPadding),
                 ) {
-                    if (!hideDetails) {
-                        PlayerTimelineDetails(
-                            title = title,
-                            seasonNumber = seasonNumber,
-                            episodeNumber = episodeNumber,
-                            episodeTitle = episodeTitle,
-                            releaseInfo = releaseInfo,
-                            streamTitle = streamTitle,
-                            providerName = providerName,
-                            isPlaying = playbackSnapshot.isPlaying,
-                            metrics = metrics,
-                        )
+                    AnimatedVisibility(
+                        visible = !isScrubbingTimeline,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                    ) {
+                        if (!hideDetails) {
+                            PlayerTimelineDetails(
+                                title = title,
+                                seasonNumber = seasonNumber,
+                                episodeNumber = episodeNumber,
+                                episodeTitle = episodeTitle,
+                                releaseInfo = releaseInfo,
+                                streamTitle = streamTitle,
+                                providerName = providerName,
+                                isPlaying = playbackSnapshot.isPlaying,
+                                metrics = metrics,
+                            )
+                        }
                     }
                     PlayerTimeline(
                         snapshot = playbackSnapshot,
@@ -293,25 +304,31 @@ internal fun PlayerControlsShell(
                         },
                         seekPreview = seekPreview,
                     )
-                    PlayerControlActions(
-                        playbackSnapshot = playbackSnapshot,
-                        displayedPositionMs = displayedPositionMs,
-                        showRemainingTime = showRemainingTime,
-                        onRuntimeClick = onRuntimeClick,
-                        metrics = metrics,
-                        resizeMode = resizeMode,
-                        onSubtitleClick = onSubtitleClick,
-                        onAudioClick = onAudioClick,
-                        onSourcesClick = onSourcesClick,
-                        onEpisodesClick = onEpisodesClick,
-                        onNextEpisodeClick = onNextEpisodeClick,
-                        onSpeedClick = onSpeedClick,
-                        onResizeModeClick = onResizeModeClick,
-                        onVideoSettingsClick = onVideoSettingsClick,
-                        onOpenInExternalPlayer = onOpenInExternalPlayer,
-                        onSubmitIntroClick = onSubmitIntroClick,
-                        onInteraction = onInteraction,
-                    )
+                    AnimatedVisibility(
+                        visible = !isScrubbingTimeline,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                    ) {
+                        PlayerControlActions(
+                            playbackSnapshot = playbackSnapshot,
+                            displayedPositionMs = displayedPositionMs,
+                            showRemainingTime = showRemainingTime,
+                            onRuntimeClick = onRuntimeClick,
+                            metrics = metrics,
+                            resizeMode = resizeMode,
+                            onSubtitleClick = onSubtitleClick,
+                            onAudioClick = onAudioClick,
+                            onSourcesClick = onSourcesClick,
+                            onEpisodesClick = onEpisodesClick,
+                            onNextEpisodeClick = onNextEpisodeClick,
+                            onSpeedClick = onSpeedClick,
+                            onResizeModeClick = onResizeModeClick,
+                            onVideoSettingsClick = onVideoSettingsClick,
+                            onOpenInExternalPlayer = onOpenInExternalPlayer,
+                            onSubmitIntroClick = onSubmitIntroClick,
+                            onInteraction = onInteraction,
+                        )
+                    }
                 }
             }
         }
@@ -604,6 +621,7 @@ private fun ProgressControls(
     displayedPositionMs: Long,
     metrics: PlayerLayoutMetrics,
     resizeMode: PlayerResizeMode,
+    isScrubbingTimeline: Boolean = false,
     onScrubChange: (Long) -> Unit,
     onScrubFinished: (Long) -> Unit,
     onResizeModeClick: () -> Unit,
@@ -626,14 +644,20 @@ private fun ProgressControls(
             durationMs = playbackSnapshot.durationMs,
             displayedPositionMs = displayedPositionMs,
             metrics = metrics,
+            isScrubbingTimeline = isScrubbingTimeline,
             onScrubChange = onScrubChange,
             onScrubFinished = onScrubFinished,
             seekPreview = seekPreview,
         )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
+        AnimatedVisibility(
+            visible = !isScrubbingTimeline,
+            enter = fadeIn(),
+            exit = fadeOut(),
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+            ) {
             Surface(
                 color = Color.Black.copy(alpha = 0.5f),
                 shape = RoundedCornerShape(24.dp),
@@ -684,6 +708,7 @@ private fun ProgressControls(
                     }
                 }
             }
+            }
         }
     }
 }
@@ -693,6 +718,7 @@ internal fun PlayerSeekBar(
     durationMs: Long,
     displayedPositionMs: Long,
     metrics: PlayerLayoutMetrics,
+    isScrubbingTimeline: Boolean = false,
     onScrubChange: (Long) -> Unit,
     onScrubFinished: (Long) -> Unit,
     modifier: Modifier = Modifier,
@@ -717,16 +743,22 @@ internal fun PlayerSeekBar(
             valueRange = 0f..seekDurationMs.toFloat(),
             track = { sliderState -> PlayerProgressTrack(sliderState) },
         )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp)
-                .padding(top = 4.dp, bottom = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+        AnimatedVisibility(
+            visible = !isScrubbingTimeline,
+            enter = fadeIn(),
+            exit = fadeOut(),
         ) {
-            TimePill(text = formatPlaybackTime(displayedPositionMs), fontSize = metrics.timeSize)
-            TimePill(text = formatPlaybackTime(durationMs), fontSize = metrics.timeSize)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp)
+                    .padding(top = 4.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TimePill(text = formatPlaybackTime(displayedPositionMs), fontSize = metrics.timeSize)
+                TimePill(text = formatPlaybackTime(durationMs), fontSize = metrics.timeSize)
+            }
         }
     }
 }

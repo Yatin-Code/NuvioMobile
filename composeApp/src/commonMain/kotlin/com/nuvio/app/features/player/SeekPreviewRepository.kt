@@ -1,8 +1,11 @@
 package com.nuvio.app.features.player
 
 import com.nuvio.app.features.addons.httpGetText
+import com.nuvio.app.features.addons.httpGetTextWithHeaders
+import com.nuvio.app.features.addons.httpRequestRaw
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
@@ -64,9 +67,58 @@ object SeekPreviewRepository {
         synchronized(lock) { trackCache.clear() }
     }
 
+    /**
+     * Stored registry API key, falling back to the bootstrap default when
+     * nothing custom is saved. Read late (not cached) so a key saved in
+     * Settings applies to the next lookup without an app restart.
+     */
+    fun currentSeekPreviewApiKey(): String {
+        PlayerSettingsRepository.ensureLoaded()
+        return PlayerSettingsRepository.uiState.value.seekPreviewApiKey
+            .ifBlank { SEEK_PREVIEW_DEFAULT_API_KEY }
+    }
+
+    /**
+     * Settings-dialog self-check: GET {base}/v1/keys/validate with the pasted
+     * key. True only on 200 + {valid:true}. Silent false on any error — the
+     * dialog (not playback) is the one place allowed to surface key errors.
+     */
+    suspend fun validateApiKey(apiKey: String): Boolean {
+        val key = apiKey.trim()
+        if (key.isEmpty()) return false
+        return try {
+            val response = httpRequestRaw(
+                method = "GET",
+                url = SEEK_PREVIEW_REGISTRY_BASE + SEEK_PREVIEW_KEYS_VALIDATE_PATH,
+                headers = mapOf(
+                    "Accept" to "application/json",
+                    "X-API-Key" to key,
+                ),
+                body = "",
+            )
+            if (response.status != 200) return false
+            try {
+                json.parseToJsonElement(response.body).jsonObject["valid"]
+                    ?.jsonPrimitive?.booleanOrNull == true
+            } catch (_: Exception) {
+                false
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private suspend fun fetchTrack(query: SeekPreviewQuery): SeekPreviewTrack? {
+        // Registry manifests are keyed (bootstrap default when nothing custom
+        // is stored); VTT/sheet bytes stay keyless (CDN/blob or local /s/ —
+        // the server keeps those routes open).
         val manifest: String = try {
-            httpGetText(query.registryUrl)
+            httpGetTextWithHeaders(
+                query.registryUrl,
+                mapOf("X-API-Key" to currentSeekPreviewApiKey()),
+            )
         } catch (e: Exception) {
             seekPreviewLog("fetchTrack manifest GET failed url=${query.registryUrl} err=${e.message}")
             return null

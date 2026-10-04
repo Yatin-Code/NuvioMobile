@@ -1167,6 +1167,9 @@
     <string name="settings_playback_seek_preview_description">Show sprite thumbnails from the preview registry while scrubbing.</string>
     <string name="settings_playback_seek_preview_contribute">Contribute previews</string>
     <string name="settings_playback_seek_preview_contribute_description">Capture thumbnails while watching and upload them to the preview registry. Off by default; capture runs on any connection and uses extra mobile data and battery.</string>
+    <string name="settings_playback_seek_preview_api_key">API key</string>
+    <string name="settings_playback_seek_preview_api_key_description">Registry key for preview lookups and uploads. Checked before saving; never synced to other devices.</string>
+    <string name="settings_playback_seek_preview_api_key_invalid">Invalid key — not saved. Check the key and try again.</string>
     <string name="settings_playback_seek_preview_debug_copy">Copy preview debug log</string>
     <string name="settings_playback_seek_preview_debug_copy_copied">Copied to clipboard — paste it back in chat.</string>
     <string name="settings_playback_seek_preview_debug_copy_empty">No preview events yet — play a title and scrub, then come back.</string>

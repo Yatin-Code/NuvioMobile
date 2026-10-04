@@ -105,6 +105,10 @@ internal expect object PlayerSettingsStorage {
     fun saveSeekPreviewEnabled(enabled: Boolean)
     fun loadSeekPreviewContributeEnabled(): Boolean?
     fun saveSeekPreviewContributeEnabled(enabled: Boolean)
+    // Device-local on purpose: the registry API key never syncs across
+    // devices (same treatment as the contribute toggle above).
+    fun loadSeekPreviewApiKey(): String?
+    fun saveSeekPreviewApiKey(apiKey: String)
     fun loadAnimeSkipEnabled(): Boolean?
     fun saveAnimeSkipEnabled(enabled: Boolean)
     fun loadAnimeSkipClientId(): String?

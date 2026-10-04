@@ -243,6 +243,9 @@ object SeekPreviewUpload {
                 headers = mapOf(
                     "Accept" to "application/json",
                     "Content-Type" to "multipart/form-data; boundary=$boundary",
+                    // Registry contributions are keyed; blank falls back to
+                    // the bootstrap key so test builds upload out of the box.
+                    "X-API-Key" to SeekPreviewRepository.currentSeekPreviewApiKey(),
                 ),
                 body = "",
                 bodyBytes = body,
