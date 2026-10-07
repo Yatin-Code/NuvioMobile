@@ -82,6 +82,19 @@ internal data class PlayerAccumulatedSeekState(
     val amountMs: Long,
 )
 
+/**
+ * One frame of the horizontal drag-to-seek gesture, and everything the seek
+ * preview card needs to answer it: the position under the finger and where
+ * that finger is across the player surface (0..1, so the card tracks the drag
+ * instead of parking in the middle).
+ */
+internal data class PlayerDragSeekPreview(
+    val positionMs: Long,
+    val fractionX: Float,
+    /** False once the finger is up: the card keeps its short linger. */
+    val isLive: Boolean = true,
+)
+
 internal data class PendingPlayerP2pSwitch(
     val stream: StreamItem,
     val episode: MetaVideo?,

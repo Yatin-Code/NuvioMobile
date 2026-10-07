@@ -4,6 +4,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Modifier
 import com.nuvio.app.features.streams.StreamsUiState
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -127,6 +128,61 @@ class PlayerScreenRuntimeStateTest {
 
         assertTrue(runtime.isScrubbingTimeline)
         assertEquals(100_000L, runtime.scrubbingPositionMs)
+    }
+
+    @Test
+    fun dragSeekPreviewFollowsTheDragThenLingersAfterRelease() = runTest {
+        val runtime = PlayerScreenRuntime(testPlayerScreenArgs()).apply { scope = backgroundScope }
+        assertNull(runtime.dragSeekPreview)
+
+        runtime.showHorizontalSeekPreview(65_000L, 60_000L, 0.8f)
+        assertEquals(65_000L, runtime.dragSeekPreview?.positionMs)
+        assertEquals(0.8f, runtime.dragSeekPreview?.fractionX)
+        assertTrue(runtime.dragSeekPreview?.isLive == true)
+
+        // Finger up: the seek commits, the card holds its position briefly.
+        runtime.clearLiveGestureFeedback()
+        assertNull(runtime.liveGestureFeedback)
+        assertEquals(65_000L, runtime.dragSeekPreview?.positionMs)
+        assertTrue(runtime.dragSeekPreview?.isLive == false)
+    }
+
+    @Test
+    fun dragSeekPreviewStopsTrackingOnceReleased() = runTest {
+        val runtime = PlayerScreenRuntime(testPlayerScreenArgs()).apply { scope = backgroundScope }
+        runtime.showHorizontalSeekPreview(65_000L, 60_000L, 0.8f)
+
+        runtime.clearLiveGestureFeedback()
+        advanceTimeBy(SeekPreviewDragPreviewHoldMs)
+
+        assertNull(runtime.dragSeekPreview)
+    }
+
+    @Test
+    fun aNewDragWinsOverAPendingReleaseClear() = runTest {
+        val runtime = PlayerScreenRuntime(testPlayerScreenArgs()).apply { scope = backgroundScope }
+        runtime.showHorizontalSeekPreview(65_000L, 60_000L, 0.8f)
+        runtime.clearLiveGestureFeedback()
+
+        // Second drag starts before the first one's linger expires.
+        runtime.showHorizontalSeekPreview(40_000L, 35_000L, 0.25f)
+        advanceTimeBy(SeekPreviewDragPreviewHoldMs)
+
+        assertEquals(40_000L, runtime.dragSeekPreview?.positionMs)
+        assertTrue(runtime.dragSeekPreview?.isLive == true)
+    }
+
+    @Test
+    fun clearingTheDragPreviewMidGestureRetiresTheCardAtOnce() = runTest {
+        val runtime = PlayerScreenRuntime(testPlayerScreenArgs()).apply { scope = backgroundScope }
+        runtime.showHorizontalSeekPreview(65_000L, 60_000L, 0.8f)
+
+        // Teardown path (source switch / playback error / locked controls):
+        // no linger, the card must not outlive the gesture.
+        runtime.clearDragSeekPreview()
+        advanceTimeBy(SeekPreviewDragPreviewHoldMs)
+
+        assertNull(runtime.dragSeekPreview)
     }
 
     @Test

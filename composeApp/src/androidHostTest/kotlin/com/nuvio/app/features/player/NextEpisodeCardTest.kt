@@ -168,7 +168,7 @@ class NextEpisodeCardTest {
                         currentPositionMsState = rememberUpdatedState(30_000L),
                         currentDurationMsState = rememberUpdatedState(120_000L),
                         deactivateHoldToSpeedState = noop,
-                        showHorizontalSeekPreviewState = rememberUpdatedState { _: Long, _: Long -> seeks++ },
+                        showHorizontalSeekPreviewState = rememberUpdatedState { _: Long, _: Long, _: Float -> seeks++ },
                         showBrightnessFeedbackState = rememberUpdatedState { _: Float -> },
                         showVolumeFeedbackState = rememberUpdatedState { _: PlayerAudioLevel -> },
                         clearLiveGestureFeedbackState = noop,

@@ -54,7 +54,7 @@ internal fun Modifier.playerSurfaceDragGestures(
     currentPositionMsState: State<Long>,
     currentDurationMsState: State<Long>,
     deactivateHoldToSpeedState: State<() -> Unit>,
-    showHorizontalSeekPreviewState: State<(Long, Long) -> Unit>,
+    showHorizontalSeekPreviewState: State<(Long, Long, Float) -> Unit>,
     showBrightnessFeedbackState: State<(Float) -> Unit>,
     showVolumeFeedbackState: State<(PlayerAudioLevel) -> Unit>,
     clearLiveGestureFeedbackState: State<() -> Unit>,
@@ -177,6 +177,10 @@ internal fun Modifier.playerSurfaceDragGestures(
                         showHorizontalSeekPreviewState.value(
                             horizontalSeekPreviewMs,
                             horizontalSeekBaselineMs,
+                            // Where the finger is across the surface, so the
+                            // preview card can track the drag itself instead of
+                            // parking under the playback position.
+                            (change.position.x / width).coerceIn(0f, 1f),
                         )
                     }
 

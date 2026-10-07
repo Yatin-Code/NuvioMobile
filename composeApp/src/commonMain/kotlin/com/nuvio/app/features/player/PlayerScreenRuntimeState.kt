@@ -135,6 +135,10 @@ internal class PlayerScreenRuntime(
     var errorMessage by mutableStateOf<String?>(null)
     var isScrubbingTimeline by mutableStateOf(false)
     var scrubbingPositionMs by mutableStateOf<Long?>(null)
+    // Horizontal drag-to-seek on the video surface: non-null from the first
+    // drag frame through the card's post-release linger, null otherwise.
+    var dragSeekPreview by mutableStateOf<PlayerDragSeekPreview?>(null)
+    var dragSeekPreviewClearJob by mutableStateOf<Job?>(null)
     var pausedOverlayVisible by mutableStateOf(false)
     var gestureFeedback by mutableStateOf<GestureFeedbackState?>(null)
     var liveGestureFeedback by mutableStateOf<GestureFeedbackState?>(null)

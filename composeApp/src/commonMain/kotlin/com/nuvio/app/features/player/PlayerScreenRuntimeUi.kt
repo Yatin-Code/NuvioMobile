@@ -111,6 +111,10 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
     }
     val gestureCallbacks = rememberSurfaceGestureCallbacks()
     val playbackGesturesEnabled = initialLoadCompleted && errorMessage == null
+    val liveDragSeekPreview = dragSeekPreview
+    val dragSeekPreviewAnchor = liveDragSeekPreview?.let {
+        SeekPreviewCardAnchor.DragFinger(it.fractionX)
+    } ?: SeekPreviewCardAnchor.TimelineThumb
 
     Box(
         modifier = Modifier
@@ -194,6 +198,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                         errorMessage = message
                         if (message != null) {
                             scrubbingPositionMs = null
+                            clearDragSeekPreview()
                             controlsVisible = !playerControlsLocked
                             removeFailedStreamFromCache()
                         }
@@ -223,6 +228,16 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         }
 
         RenderPlayerControls(displayedPositionMs = displayedPositionMs, isEpisode = isEpisode)
+        // Drag-to-seek preview. Composed out here, not inside the controls: a
+        // surface swipe is most often started with the controls already hidden,
+        // and the card has to answer it either way. `isScrubbingTimeline` gates
+        // it so a timeline scrub never gets a second card; picture-in-picture
+        // opts out with the rest of the player chrome.
+        SeekPreviewScrubOverlay(
+            params = dragSeekPreviewParams(gesturesAvailable = playbackGesturesEnabled && !isInPip),
+            anchor = dragSeekPreviewAnchor,
+            modifier = Modifier.fillMaxSize(),
+        )
         RenderPlaybackOverlays(
             runtime = runtime,
             displayedPositionMs = displayedPositionMs,
@@ -392,6 +407,53 @@ private fun PlayerScreenRuntime.RenderPlayerControls(displayedPositionMs: Long, 
             modifier = Modifier.fillMaxSize(),
         )
     }
+}
+
+/**
+ * Card params for the horizontal drag-to-seek gesture, or null when no drag is
+ * in flight (and outside its post-release linger, which keeps showing the frame
+ * the finger was aiming at).
+ *
+ * [gesturesAvailable] carries the conditions the surface drag itself runs under
+ * (loaded playback, no error, not in picture-in-picture), so a gesture torn
+ * down mid-flight — source switch, playback error, locked controls — retires
+ * the card instead of stranding it over the video.
+ */
+@Composable
+private fun PlayerScreenRuntime.dragSeekPreviewParams(gesturesAvailable: Boolean): SeekPreviewParams? {
+    val preview = dragSeekPreview ?: return null
+    if (!gesturesAvailable || playerControlsLocked || isScrubbingTimeline) return null
+    // Remembered: a drag re-runs this on every move frame, and rebuilding the
+    // query each time would churn strings and write a "query null" line per
+    // frame into the on-screen seek-preview log.
+    val query = remember(
+        parentMetaId,
+        contentType ?: parentMetaType,
+        activeVideoId,
+        activeSeasonNumber,
+        activeEpisodeNumber,
+        (metaUiState.meta ?: playerMeta)?.takeIf { it.id == parentMetaId }?.imdbId,
+        playbackSnapshot.durationMs,
+    ) {
+        buildSeekPreviewQuery(
+            parentMetaId = parentMetaId,
+            contentType = contentType ?: parentMetaType,
+            videoId = activeVideoId,
+            seasonNumber = activeSeasonNumber,
+            episodeNumber = activeEpisodeNumber,
+            metaImdbId = (metaUiState.meta ?: playerMeta)
+                ?.takeIf { it.id == parentMetaId }
+                ?.imdbId,
+            durationMs = playbackSnapshot.durationMs,
+        )
+    }
+    return SeekPreviewParams(
+        query = query,
+        enabled = playerSettingsUiState.seekPreviewEnabled,
+        isScrubbing = preview.isLive,
+        positionMs = preview.positionMs,
+        durationMs = playbackSnapshot.durationMs,
+    )
 }
 
 @Composable

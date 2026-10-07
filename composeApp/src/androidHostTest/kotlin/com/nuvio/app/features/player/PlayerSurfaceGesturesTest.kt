@@ -78,7 +78,7 @@ class PlayerSurfaceGesturesTest {
                         currentPositionMsState = rememberUpdatedState(30_000L),
                         currentDurationMsState = rememberUpdatedState(120_000L),
                         deactivateHoldToSpeedState = noop,
-                        showHorizontalSeekPreviewState = rememberUpdatedState { _: Long, _: Long -> seekPreviews++ },
+                        showHorizontalSeekPreviewState = rememberUpdatedState { _: Long, _: Long, _: Float -> seekPreviews++ },
                         showBrightnessFeedbackState = rememberUpdatedState { _: Float -> },
                         showVolumeFeedbackState = rememberUpdatedState { _: PlayerAudioLevel -> },
                         clearLiveGestureFeedbackState = noop,

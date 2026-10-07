@@ -10,6 +10,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -43,13 +44,35 @@ private val SeekPreviewCardHeight = 90.dp // 16:9 at 160 wide
 private const val SeekPreviewLingerMs = 1500L
 
 /**
- * Scrub-seek thumbnail card above the progress bar, adapted from the seekr TV
- * fork's overlay: shows only while scrubbing (plus a 1.5s linger so
- * tap-tap-tap inputs don't flicker), follows the scrub fraction with edge
- * clamp, silent when no cached tile exists for the floor timestamp.
+ * Drag-to-seek lingers far less than a timeline scrub: a surface drag commits
+ * the seek on release, so the video itself is the confirmation and a card
+ * floating over the freshly seeked frame for 1.5 s would just cover it up.
+ */
+private const val SeekPreviewDragLingerMs = 450L
+
+/**
+ * How long the player runtime keeps a released drag's card params alive: the
+ * card's own linger plus room for its exit fade, so the state never vanishes
+ * mid-animation and cuts the card off instead of letting it fade.
+ */
+internal const val SeekPreviewDragPreviewHoldMs = SeekPreviewDragLingerMs + 250L
+
+/**
+ * Scrub-seek thumbnail card, adapted from the seekr TV fork's overlay. The
+ * same card serves both seek inputs; [anchor] only says where it sits and how
+ * long it stays:
  *
- * Driven by the live scrub position ([SeekPreviewParams.positionMs], fed from
- * onScrubChange); the seek commit still fires only on onScrubFinished.
+ *  - [SeekPreviewCardAnchor.TimelineThumb] (default): above the progress bar.
+ *    Shows while scrubbing plus a 1.5s linger so tap-tap-tap inputs don't
+ *    flicker, and follows the scrub fraction with edge clamp.
+ *  - [SeekPreviewCardAnchor.DragFinger]: over the video while a horizontal
+ *    drag-to-seek on the surface is live, following the finger across the
+ *    player (same edge clamp) with a much shorter linger. This is the path a
+ *    swipe takes; without it the drag only ever showed the top text pill.
+ *
+ * Driven by the live input position ([SeekPreviewParams.positionMs], fed from
+ * onScrubChange or the drag gesture); the seek commit still fires only on
+ * onScrubFinished / finger release.
  *
  * Also silent past the served coverage: a partial registry version answers
  * with a `covered_until_ms` and the lookup honors it, so the uncovered tail of
@@ -67,6 +90,7 @@ private const val SeekPreviewLingerMs = 1500L
 internal fun SeekPreviewScrubOverlay(
     params: SeekPreviewParams?,
     modifier: Modifier = Modifier,
+    anchor: SeekPreviewCardAnchor = SeekPreviewCardAnchor.TimelineThumb,
 ) {
     if (params == null || !params.enabled) {
         seekPreviewLog("overlay skip paramsNull=${params == null} enabled=${params?.enabled}")
@@ -107,14 +131,24 @@ internal fun SeekPreviewScrubOverlay(
     // the generation counter is what wakes this overlay up for them.
     val publishedGeneration = SeekPreviewTrackBus.snapshot.generation
     LaunchedEffect(query) {
-        SeekPreviewSheetTiles.clear()
-        SeekPreviewLocalTiles.clear()
+        // Cache hygiene (dropping the previous title's sheets/tiles) belongs to
+        // the timeline card, which lives as long as the controls do. The drag
+        // card mounts and unmounts once per gesture, and clear() cancels a
+        // sheet fetch still running app-scope — so a swipe starting while the
+        // scrub card is still loading would blank it (cc0bd764). Cached tiles
+        // are keyed by sheet URL and local ones by title hash, so skipping the
+        // clear there can never serve another title's bytes.
+        val ownsTileCaches = anchor == SeekPreviewCardAnchor.TimelineThumb
+        if (ownsTileCaches) {
+            SeekPreviewSheetTiles.clear()
+            SeekPreviewLocalTiles.clear()
+        }
         bankedSlots = SeekPreviewFrameCapture.listTileTimestamps(titleHash).toSet()
         val fetched = SeekPreviewRepository.loadTrack(query)
         track = fetched ?: SeekPreviewTrackBus.trackFor(query.registryUrl)
         seekPreviewLog(
-            "overlay track loaded null=${fetched == null} cues=${track?.cues?.size} " +
-                "status=${track?.status} covered=${track?.coveredUntilMs}",
+            "overlay track loaded anchor=$anchor null=${fetched == null} " +
+                "cues=${track?.cues?.size} status=${track?.status} covered=${track?.coveredUntilMs}",
         )
     }
     LaunchedEffect(query, publishedGeneration) {
@@ -122,14 +156,20 @@ internal fun SeekPreviewScrubOverlay(
         if (published == track) return@LaunchedEffect
         track = published
         // Newly merged cue ranges mean sheets this overlay never fetched.
-        SeekPreviewSheetTiles.clear()
+        if (anchor == SeekPreviewCardAnchor.TimelineThumb) {
+            SeekPreviewSheetTiles.clear()
+        }
         seekPreviewLog(
             "overlay track refreshed cues=${published.cues.size} " +
                 "status=${published.status} covered=${published.coveredUntilMs}",
         )
     }
 
-    // Linger: keep the card visible briefly after scrub ends.
+    // Linger: keep the card visible briefly after the input that raised it ends.
+    val lingerMs = when (anchor) {
+        SeekPreviewCardAnchor.TimelineThumb -> SeekPreviewLingerMs
+        is SeekPreviewCardAnchor.DragFinger -> SeekPreviewDragLingerMs
+    }
     var lingerVisible by remember { mutableStateOf(false) }
     LaunchedEffect(params.isScrubbing) {
         if (params.isScrubbing) {
@@ -145,7 +185,7 @@ internal fun SeekPreviewScrubOverlay(
                 bankedSlots
             }
         } else {
-            delay(SeekPreviewLingerMs)
+            delay(lingerMs)
             lingerVisible = false
         }
     }
@@ -197,42 +237,84 @@ internal fun SeekPreviewScrubOverlay(
         modifier = modifier,
     ) {
         val bitmap = tile ?: return@AnimatedVisibility
-        val fraction = (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
-        val palette = MaterialTheme.themePalette
-        BoxWithConstraints(
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            val left = seekPreviewCardOffset(maxWidth, SeekPreviewCardWidth, fraction)
-            Column(
-                modifier = Modifier
-                    .offset(x = left)
-                    .width(SeekPreviewCardWidth)
-                    .padding(bottom = 4.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Image(
-                    bitmap = bitmap,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(SeekPreviewCardWidth, SeekPreviewCardHeight)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color.Black)
-                        .border(1.dp, palette.secondary, RoundedCornerShape(6.dp)),
-                )
-                Text(
-                    text = formatPlaybackTime(positionMs),
-                    style = MaterialTheme.nuvioTypeScale.labelSm.copy(fontSize = 11.sp),
-                    color = Color.White,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.Black.copy(alpha = 0.5f))
-                        .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
-                )
+        when (anchor) {
+            SeekPreviewCardAnchor.TimelineThumb -> {
+                val fraction = (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+                BoxWithConstraints(
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    val left = seekPreviewCardOffset(maxWidth, SeekPreviewCardWidth, fraction)
+                    SeekPreviewCard(
+                        bitmap = bitmap,
+                        positionMs = positionMs,
+                        modifier = Modifier
+                            .offset(x = left)
+                            .width(SeekPreviewCardWidth)
+                            .padding(bottom = 4.dp),
+                    )
+                }
+            }
+
+            is SeekPreviewCardAnchor.DragFinger -> {
+                // No timeline under a surface drag: the card tracks the finger
+                // horizontally and sits on the vertical centre of the video.
+                // Same 160dp width and edge clamp as the thumb placement, so a
+                // card at either end of a swipe is never half off-screen.
+                BoxWithConstraints(
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    val left = seekPreviewCardOffset(maxWidth, SeekPreviewCardWidth, anchor.fractionX)
+                    val centreShift = ((maxWidth - SeekPreviewCardWidth) / 2).coerceAtLeast(0.dp)
+                    SeekPreviewCard(
+                        bitmap = bitmap,
+                        positionMs = positionMs,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .offset(x = left - centreShift)
+                            .width(SeekPreviewCardWidth),
+                    )
+                }
             }
         }
+    }
+}
+
+/**
+ * The card itself: frame plus its time pill. Extracted so both anchors render
+ * byte-identical artwork — only the placement around it differs.
+ */
+@Composable
+private fun SeekPreviewCard(
+    bitmap: ImageBitmap,
+    positionMs: Long,
+    modifier: Modifier = Modifier,
+) {
+    val palette = MaterialTheme.themePalette
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(SeekPreviewCardWidth, SeekPreviewCardHeight)
+                .clip(RoundedCornerShape(6.dp))
+                .background(Color.Black)
+                .border(1.dp, palette.secondary, RoundedCornerShape(6.dp)),
+        )
+        Text(
+            text = formatPlaybackTime(positionMs),
+            style = MaterialTheme.nuvioTypeScale.labelSm.copy(fontSize = 11.sp),
+            color = Color.White,
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.Black.copy(alpha = 0.5f))
+                .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+        )
     }
 }
 

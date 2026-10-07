@@ -17,7 +17,7 @@ internal data class PlayerSurfaceGestureCallbacks(
     val onSurfaceDoubleTap: State<(Offset) -> Unit>,
     val activateHoldToSpeed: State<() -> Unit>,
     val deactivateHoldToSpeed: State<() -> Unit>,
-    val showHorizontalSeekPreview: State<(Long, Long) -> Unit>,
+    val showHorizontalSeekPreview: State<(Long, Long, Float) -> Unit>,
     val showBrightnessFeedback: State<(Float) -> Unit>,
     val showVolumeFeedback: State<(PlayerAudioLevel) -> Unit>,
     val clearLiveGestureFeedback: State<() -> Unit>,
@@ -45,6 +45,35 @@ internal fun PlayerScreenRuntime.showGestureMessage(message: String) {
 
 internal fun PlayerScreenRuntime.clearLiveGestureFeedback() {
     liveGestureFeedback = null
+    releaseDragSeekPreview()
+}
+
+/**
+ * Drag-to-seek is over (finger up). The preview card stops tracking the finger
+ * but keeps its position for a short linger so the last frame the user aimed at
+ * stays readable while the seek lands, then the state is dropped.
+ */
+internal fun PlayerScreenRuntime.releaseDragSeekPreview() {
+    val preview = dragSeekPreview ?: return
+    if (!preview.isLive) return
+    dragSeekPreview = preview.copy(isLive = false)
+    dragSeekPreviewClearJob?.cancel()
+    dragSeekPreviewClearJob = scope.launch {
+        delay(SeekPreviewDragPreviewHoldMs)
+        dragSeekPreview = null
+        dragSeekPreviewClearJob = null
+    }
+}
+
+/**
+ * Hard reset of the drag preview, for the paths that end a gesture without the
+ * release step (controls locked mid-drag, source switch, playback error): the
+ * card must not outlive the drag it was describing.
+ */
+internal fun PlayerScreenRuntime.clearDragSeekPreview() {
+    dragSeekPreviewClearJob?.cancel()
+    dragSeekPreviewClearJob = null
+    dragSeekPreview = null
 }
 
 internal fun PlayerScreenRuntime.revealLockedOverlay() {
@@ -62,6 +91,7 @@ internal fun PlayerScreenRuntime.lockPlayerControls() {
     gestureMessageJob?.cancel()
     gestureFeedback = null
     liveGestureFeedback = null
+    clearDragSeekPreview()
     renderedGestureFeedback = null
     showAudioModal = false
     showSubtitleModal = false
@@ -98,7 +128,20 @@ internal fun PlayerScreenRuntime.showSeekFeedback(direction: PlayerSeekDirection
     )
 }
 
-internal fun PlayerScreenRuntime.showHorizontalSeekPreview(previewPositionMs: Long, baselinePositionMs: Long) {
+internal fun PlayerScreenRuntime.showHorizontalSeekPreview(
+    previewPositionMs: Long,
+    baselinePositionMs: Long,
+    fractionX: Float,
+) {
+    // The preview card reads this directly, so a fresh drag frame cancels any
+    // pending post-release drop instead of losing the race with it.
+    dragSeekPreviewClearJob?.cancel()
+    dragSeekPreviewClearJob = null
+    dragSeekPreview = PlayerDragSeekPreview(
+        positionMs = previewPositionMs,
+        fractionX = fractionX.coerceIn(0f, 1f),
+        isLive = true,
+    )
     val deltaMs = previewPositionMs - baselinePositionMs
     val direction = if (deltaMs < 0L) PlayerSeekDirection.Backward else PlayerSeekDirection.Forward
     liveGestureFeedback = GestureFeedbackState(
@@ -305,7 +348,11 @@ internal fun PlayerScreenRuntime.rememberSurfaceGestureCallbacks(): PlayerSurfac
         onSurfaceDoubleTap = onSurfaceDoubleTap,
         activateHoldToSpeed = rememberUpdatedState(::activateHoldToSpeed),
         deactivateHoldToSpeed = rememberUpdatedState(::deactivateHoldToSpeed),
-        showHorizontalSeekPreview = rememberUpdatedState(::showHorizontalSeekPreview),
+        showHorizontalSeekPreview = rememberUpdatedState(
+            { previewPositionMs: Long, baselinePositionMs: Long, fractionX: Float ->
+                showHorizontalSeekPreview(previewPositionMs, baselinePositionMs, fractionX)
+            },
+        ),
         showBrightnessFeedback = rememberUpdatedState(::showBrightnessFeedback),
         showVolumeFeedback = rememberUpdatedState(::showVolumeFeedback),
         clearLiveGestureFeedback = rememberUpdatedState(::clearLiveGestureFeedback),

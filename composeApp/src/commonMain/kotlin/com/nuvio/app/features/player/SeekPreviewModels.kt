@@ -197,6 +197,28 @@ data class SeekPreviewParams(
     val durationMs: Long,
 )
 
+/**
+ * Where the card sits while it is up. The card itself (thumbnail, frame, time
+ * pill) is identical for both — only its anchor and how long it stays differ.
+ */
+internal sealed interface SeekPreviewCardAnchor {
+    /**
+     * Above the timeline slider, in the seek bar's own column: x follows the
+     * scrub fraction, y is the slider's, and the card lingers 1.5 s after the
+     * scrub ends (unchanged scrub behavior).
+     */
+    data object TimelineThumb : SeekPreviewCardAnchor
+
+    /**
+     * Over the video while a horizontal drag-to-seek is live: x follows
+     * [fractionX] (the finger's position across the player surface, clamped
+     * with the same edge clamp the thumb uses) and y is the vertical centre,
+     * because there is no timeline under a surface drag. Linger is shorter —
+     * the seek commits on release, so the real frame is the confirmation.
+     */
+    data class DragFinger(val fractionX: Float) : SeekPreviewCardAnchor
+}
+
 internal fun extractSeekImdbId(value: String?): String? =
     value
         ?.trim()
