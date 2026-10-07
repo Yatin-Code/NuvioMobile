@@ -178,6 +178,8 @@ internal fun SeekPreviewScrubOverlay(
             cue != null -> {
                 try {
                     SeekPreviewSheetTiles.tile(cue.imageUrl, cue.x, cue.y, cue.w, cue.h)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
                 } catch (e: Exception) {
                     seekPreviewLog("overlay tile failed url=${cue.imageUrl} err=${e.message}")
                     null
